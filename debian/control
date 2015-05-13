@@ -1,0 +1,18 @@
+Source: syncthing
+Section: net
+Priority: extra
+Maintainer: Syncthing Release Management <release@syncthing.net>
+Build-Depends: debhelper (>= 8.0.0),
+               dh-golang,
+               golang-go
+Standards-Version: 3.9.2
+#Vcs-Git: git://git.debian.org/collab-maint/dcs.git#FIXME
+#Vcs-Browser: http://git.debian.org/?p=collab-maint/dcs.git;a=summary#FIXME
+
+Package: syncthing
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, dpkg-dev
+Built-Using: ${misc:Built-Using}
+Description: Open Source Continuous File Synchronization
+	Syncthing does bidirectional synchronization of files between two or
+	more computers.
