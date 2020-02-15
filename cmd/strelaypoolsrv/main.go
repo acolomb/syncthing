@@ -7,10 +7,12 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"mime"
@@ -363,8 +365,8 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleGetRequest(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+func handleGetRequest(rw http.ResponseWriter, r *http.Request) {
+	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
 	mut.RLock()
 	relays := append(permanentRelays, knownRelays...)
 	mut.RUnlock()
@@ -372,7 +374,15 @@ func handleGetRequest(w http.ResponseWriter, r *http.Request) {
 	// Shuffle
 	rand.Shuffle(relays)
 
-	json.NewEncoder(w).Encode(map[string][]*relay{
+	w := io.Writer(rw)
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		rw.Header().Set("Content-Encoding", "gzip")
+		gw := gzip.NewWriter(rw)
+		defer gw.Close()
+		w = gw
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string][]*relay{
 		"relays": relays,
 	})
 }
@@ -480,7 +490,7 @@ func handleRelayTest(request request) {
 	if debug {
 		log.Println("Request for", request.relay)
 	}
-	if !client.TestRelay(request.relay.uri, []tls.Certificate{testCert}, time.Second, 2*time.Second, 3) {
+	if !client.TestRelay(context.TODO(), request.relay.uri, []tls.Certificate{testCert}, time.Second, 2*time.Second, 3) {
 		if debug {
 			log.Println("Test for relay", request.relay, "failed")
 		}
@@ -633,7 +643,7 @@ func createTestCertificate() tls.Certificate {
 	}
 
 	certFile, keyFile := filepath.Join(tmpDir, "cert.pem"), filepath.Join(tmpDir, "key.pem")
-	cert, err := tlsutil.NewCertificate(certFile, keyFile, "relaypoolsrv")
+	cert, err := tlsutil.NewCertificate(certFile, keyFile, "relaypoolsrv", 20*365)
 	if err != nil {
 		log.Fatalln("Failed to create test X509 key pair:", err)
 	}

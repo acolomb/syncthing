@@ -3,9 +3,9 @@
 package protocol
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	lz4 "github.com/bkaradzic/go-lz4"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -79,28 +80,6 @@ const (
 	stateReady
 )
 
-// Request message flags
-const (
-	FlagFromTemporary uint32 = 1 << iota
-)
-
-// ClusterConfigMessage.Folders flags
-const (
-	FlagFolderReadOnly            uint32 = 1 << 0
-	FlagFolderIgnorePerms                = 1 << 1
-	FlagFolderIgnoreDelete               = 1 << 2
-	FlagFolderDisabledTempIndexes        = 1 << 3
-	FlagFolderAll                        = 1<<4 - 1
-)
-
-// ClusterConfigMessage.Folders.Devices flags
-const (
-	FlagShareTrusted  uint32 = 1 << 0
-	FlagShareReadOnly        = 1 << 1
-	FlagIntroducer           = 1 << 2
-	FlagShareBits            = 0x000000ff
-)
-
 // FileInfo.LocalFlags flags
 const (
 	FlagLocalUnsupported = 1 << 0 // The kind is unsupported, e.g. symlinks on Windows
@@ -120,30 +99,29 @@ const (
 )
 
 var (
-	ErrClosed               = errors.New("connection closed")
-	ErrTimeout              = errors.New("read timeout")
-	ErrSwitchingConnections = errors.New("switching connections")
-	errUnknownMessage       = errors.New("unknown message")
-	errInvalidFilename      = errors.New("filename is invalid")
-	errUncleanFilename      = errors.New("filename not in canonical format")
-	errDeletedHasBlocks     = errors.New("deleted file with non-empty block list")
-	errDirectoryHasBlocks   = errors.New("directory with non-empty block list")
-	errFileHasNoBlocks      = errors.New("file with empty block list")
+	ErrClosed             = errors.New("connection closed")
+	ErrTimeout            = errors.New("read timeout")
+	errUnknownMessage     = errors.New("unknown message")
+	errInvalidFilename    = errors.New("filename is invalid")
+	errUncleanFilename    = errors.New("filename not in canonical format")
+	errDeletedHasBlocks   = errors.New("deleted file with non-empty block list")
+	errDirectoryHasBlocks = errors.New("directory with non-empty block list")
+	errFileHasNoBlocks    = errors.New("file with empty block list")
 )
 
 type Model interface {
 	// An index was received from the peer device
-	Index(deviceID DeviceID, folder string, files []FileInfo)
+	Index(deviceID DeviceID, folder string, files []FileInfo) error
 	// An index update was received from the peer device
-	IndexUpdate(deviceID DeviceID, folder string, files []FileInfo)
+	IndexUpdate(deviceID DeviceID, folder string, files []FileInfo) error
 	// A request was made by the peer device
 	Request(deviceID DeviceID, folder, name string, size int32, offset int64, hash []byte, weakHash uint32, fromTemporary bool) (RequestResponse, error)
 	// A cluster configuration message was received
-	ClusterConfig(deviceID DeviceID, config ClusterConfig)
+	ClusterConfig(deviceID DeviceID, config ClusterConfig) error
 	// The peer device closed the connection
 	Closed(conn Connection, err error)
 	// The peer device sent progress updates for the files it is currently downloading
-	DownloadProgress(deviceID DeviceID, folder string, updates []FileDownloadProgressUpdate)
+	DownloadProgress(deviceID DeviceID, folder string, updates []FileDownloadProgressUpdate) error
 }
 
 type RequestResponse interface {
@@ -157,11 +135,11 @@ type Connection interface {
 	Close(err error)
 	ID() DeviceID
 	Name() string
-	Index(folder string, files []FileInfo) error
-	IndexUpdate(folder string, files []FileInfo) error
-	Request(folder string, name string, offset int64, size int, hash []byte, weakHash uint32, fromTemporary bool) ([]byte, error)
+	Index(ctx context.Context, folder string, files []FileInfo) error
+	IndexUpdate(ctx context.Context, folder string, files []FileInfo) error
+	Request(ctx context.Context, folder string, name string, offset int64, size int, hash []byte, weakHash uint32, fromTemporary bool) ([]byte, error)
 	ClusterConfig(config ClusterConfig)
-	DownloadProgress(folder string, updates []FileDownloadProgressUpdate)
+	DownloadProgress(ctx context.Context, folder string, updates []FileDownloadProgressUpdate)
 	Statistics() Statistics
 	Closed() bool
 }
@@ -184,8 +162,10 @@ type rawConnection struct {
 
 	inbox                 chan message
 	outbox                chan asyncMessage
+	closeBox              chan asyncMessage
 	clusterConfigBox      chan *ClusterConfig
 	dispatcherLoopStopped chan struct{}
+	preventSends          chan struct{}
 	closed                chan struct{}
 	closeOnce             sync.Once
 	sendCloseOnce         sync.Once
@@ -218,6 +198,11 @@ const (
 	ReceiveTimeout = 300 * time.Second
 )
 
+// CloseTimeout is the longest we'll wait when trying to send the close
+// message before just closing the connection.
+// Should not be modified in production code, just for testing.
+var CloseTimeout = 10 * time.Second
+
 func NewConnection(deviceID DeviceID, reader io.Reader, writer io.Writer, receiver Model, name string, compress Compression) Connection {
 	cr := &countingReader{Reader: reader}
 	cw := &countingWriter{Writer: writer}
@@ -231,8 +216,10 @@ func NewConnection(deviceID DeviceID, reader io.Reader, writer io.Writer, receiv
 		awaiting:              make(map[int32]chan asyncResult),
 		inbox:                 make(chan message),
 		outbox:                make(chan asyncMessage),
+		closeBox:              make(chan asyncMessage),
 		clusterConfigBox:      make(chan *ClusterConfig),
 		dispatcherLoopStopped: make(chan struct{}),
+		preventSends:          make(chan struct{}),
 		closed:                make(chan struct{}),
 		compression:           compress,
 	}
@@ -262,14 +249,14 @@ func (c *rawConnection) Name() string {
 }
 
 // Index writes the list of file information to the connected peer device
-func (c *rawConnection) Index(folder string, idx []FileInfo) error {
+func (c *rawConnection) Index(ctx context.Context, folder string, idx []FileInfo) error {
 	select {
 	case <-c.closed:
 		return ErrClosed
 	default:
 	}
 	c.idxMut.Lock()
-	c.send(&Index{
+	c.send(ctx, &Index{
 		Folder: folder,
 		Files:  idx,
 	}, nil)
@@ -278,14 +265,14 @@ func (c *rawConnection) Index(folder string, idx []FileInfo) error {
 }
 
 // IndexUpdate writes the list of file information to the connected peer device as an update
-func (c *rawConnection) IndexUpdate(folder string, idx []FileInfo) error {
+func (c *rawConnection) IndexUpdate(ctx context.Context, folder string, idx []FileInfo) error {
 	select {
 	case <-c.closed:
 		return ErrClosed
 	default:
 	}
 	c.idxMut.Lock()
-	c.send(&IndexUpdate{
+	c.send(ctx, &IndexUpdate{
 		Folder: folder,
 		Files:  idx,
 	}, nil)
@@ -294,7 +281,7 @@ func (c *rawConnection) IndexUpdate(folder string, idx []FileInfo) error {
 }
 
 // Request returns the bytes for the specified block after fetching them from the connected peer.
-func (c *rawConnection) Request(folder string, name string, offset int64, size int, hash []byte, weakHash uint32, fromTemporary bool) ([]byte, error) {
+func (c *rawConnection) Request(ctx context.Context, folder string, name string, offset int64, size int, hash []byte, weakHash uint32, fromTemporary bool) ([]byte, error) {
 	c.nextIDMut.Lock()
 	id := c.nextID
 	c.nextID++
@@ -308,7 +295,7 @@ func (c *rawConnection) Request(folder string, name string, offset int64, size i
 	c.awaiting[id] = rc
 	c.awaitingMut.Unlock()
 
-	ok := c.send(&Request{
+	ok := c.send(ctx, &Request{
 		ID:            id,
 		Folder:        folder,
 		Name:          name,
@@ -322,11 +309,15 @@ func (c *rawConnection) Request(folder string, name string, offset int64, size i
 		return nil, ErrClosed
 	}
 
-	res, ok := <-rc
-	if !ok {
-		return nil, ErrClosed
+	select {
+	case res, ok := <-rc:
+		if !ok {
+			return nil, ErrClosed
+		}
+		return res.val, res.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	return res.val, res.err
 }
 
 // ClusterConfig sends the cluster configuration message to the peer.
@@ -349,15 +340,15 @@ func (c *rawConnection) Closed() bool {
 }
 
 // DownloadProgress sends the progress updates for the files that are currently being downloaded.
-func (c *rawConnection) DownloadProgress(folder string, updates []FileDownloadProgressUpdate) {
-	c.send(&DownloadProgress{
+func (c *rawConnection) DownloadProgress(ctx context.Context, folder string, updates []FileDownloadProgressUpdate) {
+	c.send(ctx, &DownloadProgress{
 		Folder:  folder,
 		Updates: updates,
 	}, nil)
 }
 
 func (c *rawConnection) ping() bool {
-	return c.send(&Ping{}, nil)
+	return c.send(context.Background(), &Ping{}, nil)
 }
 
 func (c *rawConnection) readerLoop() {
@@ -397,7 +388,9 @@ func (c *rawConnection) dispatcherLoop() (err error) {
 			if state != stateInitial {
 				return fmt.Errorf("protocol error: cluster config message in state %d", state)
 			}
-			c.receiver.ClusterConfig(c.id, *msg)
+			if err := c.receiver.ClusterConfig(c.id, *msg); err != nil {
+				return errors.Wrap(err, "receiver error")
+			}
 			state = stateReady
 
 		case *Index:
@@ -406,9 +399,11 @@ func (c *rawConnection) dispatcherLoop() (err error) {
 				return fmt.Errorf("protocol error: index message in state %d", state)
 			}
 			if err := checkIndexConsistency(msg.Files); err != nil {
-				return fmt.Errorf("protocol error: index: %v", err)
+				return errors.Wrap(err, "protocol error: index")
 			}
-			c.handleIndex(*msg)
+			if err := c.handleIndex(*msg); err != nil {
+				return errors.Wrap(err, "receiver error")
+			}
 			state = stateReady
 
 		case *IndexUpdate:
@@ -417,9 +412,11 @@ func (c *rawConnection) dispatcherLoop() (err error) {
 				return fmt.Errorf("protocol error: index update message in state %d", state)
 			}
 			if err := checkIndexConsistency(msg.Files); err != nil {
-				return fmt.Errorf("protocol error: index update: %v", err)
+				return errors.Wrap(err, "protocol error: index update")
 			}
-			c.handleIndexUpdate(*msg)
+			if err := c.handleIndexUpdate(*msg); err != nil {
+				return errors.Wrap(err, "receiver error")
+			}
 			state = stateReady
 
 		case *Request:
@@ -428,7 +425,7 @@ func (c *rawConnection) dispatcherLoop() (err error) {
 				return fmt.Errorf("protocol error: request message in state %d", state)
 			}
 			if err := checkFilename(msg.Name); err != nil {
-				return fmt.Errorf("protocol error: request: %q: %v", msg.Name, err)
+				return errors.Wrapf(err, "protocol error: request: %q", msg.Name)
 			}
 			go c.handleRequest(*msg)
 
@@ -444,7 +441,9 @@ func (c *rawConnection) dispatcherLoop() (err error) {
 			if state != stateReady {
 				return fmt.Errorf("protocol error: response message in state %d", state)
 			}
-			c.receiver.DownloadProgress(c.id, msg.Folder, msg.Updates)
+			if err := c.receiver.DownloadProgress(c.id, msg.Folder, msg.Updates); err != nil {
+				return errors.Wrap(err, "receiver error")
+			}
 
 		case *Ping:
 			l.Debugln("read Ping message")
@@ -477,18 +476,20 @@ func (c *rawConnection) readMessageAfterHeader(hdr Header, fourByteBuf []byte) (
 	// First comes a 4 byte message length
 
 	if _, err := io.ReadFull(c.cr, fourByteBuf[:4]); err != nil {
-		return nil, fmt.Errorf("reading message length: %v", err)
+		return nil, errors.Wrap(err, "reading message length")
 	}
 	msgLen := int32(binary.BigEndian.Uint32(fourByteBuf))
 	if msgLen < 0 {
 		return nil, fmt.Errorf("negative message length %d", msgLen)
+	} else if msgLen > MaxMessageLen {
+		return nil, fmt.Errorf("message length %d exceeds maximum %d", msgLen, MaxMessageLen)
 	}
 
 	// Then comes the message
 
 	buf := BufferPool.Get(int(msgLen))
 	if _, err := io.ReadFull(c.cr, buf); err != nil {
-		return nil, fmt.Errorf("reading message: %v", err)
+		return nil, errors.Wrap(err, "reading message")
 	}
 
 	// ... which might be compressed
@@ -501,7 +502,7 @@ func (c *rawConnection) readMessageAfterHeader(hdr Header, fourByteBuf []byte) (
 		decomp, err := c.lz4Decompress(buf)
 		BufferPool.Put(buf)
 		if err != nil {
-			return nil, fmt.Errorf("decompressing message: %v", err)
+			return nil, errors.Wrap(err, "decompressing message")
 		}
 		buf = decomp
 
@@ -516,7 +517,7 @@ func (c *rawConnection) readMessageAfterHeader(hdr Header, fourByteBuf []byte) (
 		return nil, err
 	}
 	if err := msg.Unmarshal(buf); err != nil {
-		return nil, fmt.Errorf("unmarshalling message: %v", err)
+		return nil, errors.Wrap(err, "unmarshalling message")
 	}
 	BufferPool.Put(buf)
 
@@ -527,7 +528,7 @@ func (c *rawConnection) readHeader(fourByteBuf []byte) (Header, error) {
 	// First comes a 2 byte header length
 
 	if _, err := io.ReadFull(c.cr, fourByteBuf[:2]); err != nil {
-		return Header{}, fmt.Errorf("reading length: %v", err)
+		return Header{}, errors.Wrap(err, "reading length")
 	}
 	hdrLen := int16(binary.BigEndian.Uint16(fourByteBuf))
 	if hdrLen < 0 {
@@ -538,26 +539,26 @@ func (c *rawConnection) readHeader(fourByteBuf []byte) (Header, error) {
 
 	buf := BufferPool.Get(int(hdrLen))
 	if _, err := io.ReadFull(c.cr, buf); err != nil {
-		return Header{}, fmt.Errorf("reading header: %v", err)
+		return Header{}, errors.Wrap(err, "reading header")
 	}
 
 	var hdr Header
 	if err := hdr.Unmarshal(buf); err != nil {
-		return Header{}, fmt.Errorf("unmarshalling header: %v", err)
+		return Header{}, errors.Wrap(err, "unmarshalling header")
 	}
 
 	BufferPool.Put(buf)
 	return hdr, nil
 }
 
-func (c *rawConnection) handleIndex(im Index) {
+func (c *rawConnection) handleIndex(im Index) error {
 	l.Debugf("Index(%v, %v, %d file)", c.id, im.Folder, len(im.Files))
-	c.receiver.Index(c.id, im.Folder, im.Files)
+	return c.receiver.Index(c.id, im.Folder, im.Files)
 }
 
-func (c *rawConnection) handleIndexUpdate(im IndexUpdate) {
+func (c *rawConnection) handleIndexUpdate(im IndexUpdate) error {
 	l.Debugf("queueing IndexUpdate(%v, %v, %d files)", c.id, im.Folder, len(im.Files))
-	c.receiver.IndexUpdate(c.id, im.Folder, im.Files)
+	return c.receiver.IndexUpdate(c.id, im.Folder, im.Files)
 }
 
 // checkIndexConsistency verifies a number of invariants on FileInfos received in
@@ -565,7 +566,7 @@ func (c *rawConnection) handleIndexUpdate(im IndexUpdate) {
 func checkIndexConsistency(fs []FileInfo) error {
 	for _, f := range fs {
 		if err := checkFileInfoConsistency(f); err != nil {
-			return fmt.Errorf("%q: %v", f.Name, err)
+			return errors.Wrapf(err, "%q", f.Name)
 		}
 	}
 	return nil
@@ -625,14 +626,14 @@ func checkFilename(name string) error {
 func (c *rawConnection) handleRequest(req Request) {
 	res, err := c.receiver.Request(c.id, req.Folder, req.Name, req.Size, req.Offset, req.Hash, req.WeakHash, req.FromTemporary)
 	if err != nil {
-		c.send(&Response{
+		c.send(context.Background(), &Response{
 			ID:   req.ID,
 			Code: errorToCode(err),
 		}, nil)
 		return
 	}
 	done := make(chan struct{})
-	c.send(&Response{
+	c.send(context.Background(), &Response{
 		ID:   req.ID,
 		Data: res.Data(),
 		Code: errorToCode(nil),
@@ -651,16 +652,18 @@ func (c *rawConnection) handleResponse(resp Response) {
 	c.awaitingMut.Unlock()
 }
 
-func (c *rawConnection) send(msg message, done chan struct{}) bool {
+func (c *rawConnection) send(ctx context.Context, msg message, done chan struct{}) bool {
 	select {
 	case c.outbox <- asyncMessage{msg, done}:
 		return true
+	case <-c.preventSends:
 	case <-c.closed:
-		if done != nil {
-			close(done)
-		}
-		return false
+	case <-ctx.Done():
 	}
+	if done != nil {
+		close(done)
+	}
+	return false
 }
 
 func (c *rawConnection) writerLoop() {
@@ -671,6 +674,10 @@ func (c *rawConnection) writerLoop() {
 			c.internalClose(err)
 			return
 		}
+	case hm := <-c.closeBox:
+		_ = c.writeMessage(hm.msg)
+		close(hm.done)
+		return
 	case <-c.closed:
 		return
 	}
@@ -685,6 +692,11 @@ func (c *rawConnection) writerLoop() {
 				c.internalClose(err)
 				return
 			}
+
+		case hm := <-c.closeBox:
+			_ = c.writeMessage(hm.msg)
+			close(hm.done)
+			return
 
 		case <-c.closed:
 			return
@@ -703,12 +715,12 @@ func (c *rawConnection) writeCompressedMessage(msg message) error {
 	size := msg.ProtoSize()
 	buf := BufferPool.Get(size)
 	if _, err := msg.MarshalTo(buf); err != nil {
-		return fmt.Errorf("marshalling message: %v", err)
+		return errors.Wrap(err, "marshalling message")
 	}
 
 	compressed, err := c.lz4Compress(buf)
 	if err != nil {
-		return fmt.Errorf("compressing message: %v", err)
+		return errors.Wrap(err, "compressing message")
 	}
 
 	hdr := Header{
@@ -727,7 +739,7 @@ func (c *rawConnection) writeCompressedMessage(msg message) error {
 	binary.BigEndian.PutUint16(buf, uint16(hdrSize))
 	// Header
 	if _, err := hdr.MarshalTo(buf[2:]); err != nil {
-		return fmt.Errorf("marshalling header: %v", err)
+		return errors.Wrap(err, "marshalling header")
 	}
 	// Message length
 	binary.BigEndian.PutUint32(buf[2+hdrSize:], uint32(len(compressed)))
@@ -740,7 +752,7 @@ func (c *rawConnection) writeCompressedMessage(msg message) error {
 
 	l.Debugf("wrote %d bytes on the wire (2 bytes length, %d bytes header, 4 bytes message length, %d bytes message (%d uncompressed)), err=%v", n, hdrSize, len(compressed), size, err)
 	if err != nil {
-		return fmt.Errorf("writing message: %v", err)
+		return errors.Wrap(err, "writing message")
 	}
 	return nil
 }
@@ -763,13 +775,13 @@ func (c *rawConnection) writeUncompressedMessage(msg message) error {
 	binary.BigEndian.PutUint16(buf, uint16(hdrSize))
 	// Header
 	if _, err := hdr.MarshalTo(buf[2:]); err != nil {
-		return fmt.Errorf("marshalling header: %v", err)
+		return errors.Wrap(err, "marshalling header")
 	}
 	// Message length
 	binary.BigEndian.PutUint32(buf[2+hdrSize:], uint32(size))
 	// Message
 	if _, err := msg.MarshalTo(buf[2+hdrSize+4:]); err != nil {
-		return fmt.Errorf("marshalling message: %v", err)
+		return errors.Wrap(err, "marshalling message")
 	}
 
 	n, err := c.cw.Write(buf[:totSize])
@@ -777,7 +789,7 @@ func (c *rawConnection) writeUncompressedMessage(msg message) error {
 
 	l.Debugf("wrote %d bytes on the wire (2 bytes length, %d bytes header, 4 bytes message length, %d bytes message), err=%v", n, hdrSize, size, err)
 	if err != nil {
-		return fmt.Errorf("writing message: %v", err)
+		return errors.Wrap(err, "writing message")
 	}
 	return nil
 }
@@ -853,16 +865,23 @@ func (c *rawConnection) shouldCompressMessage(msg message) bool {
 func (c *rawConnection) Close(err error) {
 	c.sendCloseOnce.Do(func() {
 		done := make(chan struct{})
-		c.send(&Close{err.Error()}, done)
+		timeout := time.NewTimer(CloseTimeout)
 		select {
-		case <-done:
+		case c.closeBox <- asyncMessage{&Close{err.Error()}, done}:
+			select {
+			case <-done:
+			case <-timeout.C:
+			case <-c.closed:
+			}
+		case <-timeout.C:
 		case <-c.closed:
 		}
 	})
 
-	// No more sends are necessary, therefore further steps to close the
-	// connection outside of this package can proceed immediately.
-	// And this prevents a potential deadlock due to calling c.receiver.Closed
+	// Close might be called from a method that is called from within
+	// dispatcherLoop, resulting in a deadlock.
+	// The sending above must happen before spawning the routine, to prevent
+	// the underlying connection from terminating before sending the close msg.
 	go c.internalClose(err)
 }
 
@@ -954,14 +973,17 @@ func (c *rawConnection) Statistics() Statistics {
 
 func (c *rawConnection) lz4Compress(src []byte) ([]byte, error) {
 	var err error
-	buf := BufferPool.Get(len(src))
-	buf, err = lz4.Encode(buf, src)
+	buf := BufferPool.Get(lz4.CompressBound(len(src)))
+	compressed, err := lz4.Encode(buf, src)
 	if err != nil {
 		return nil, err
 	}
+	if &compressed[0] != &buf[0] {
+		panic("bug: lz4.Compress allocated, which it must not (should use buffer pool)")
+	}
 
-	binary.BigEndian.PutUint32(buf, binary.LittleEndian.Uint32(buf))
-	return buf, nil
+	binary.BigEndian.PutUint32(compressed, binary.LittleEndian.Uint32(compressed))
+	return compressed, nil
 }
 
 func (c *rawConnection) lz4Decompress(src []byte) ([]byte, error) {
@@ -969,9 +991,12 @@ func (c *rawConnection) lz4Decompress(src []byte) ([]byte, error) {
 	binary.LittleEndian.PutUint32(src, size)
 	var err error
 	buf := BufferPool.Get(int(size))
-	buf, err = lz4.Decode(buf, src)
+	decoded, err := lz4.Decode(buf, src)
 	if err != nil {
 		return nil, err
 	}
-	return buf, nil
+	if &decoded[0] != &buf[0] {
+		panic("bug: lz4.Decode allocated, which it must not (should use buffer pool)")
+	}
+	return decoded, nil
 }

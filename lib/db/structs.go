@@ -116,6 +116,18 @@ func (f FileInfoTruncated) FileVersion() protocol.Vector {
 	return f.Version
 }
 
+func (f FileInfoTruncated) FileType() protocol.FileInfoType {
+	return f.Type
+}
+
+func (f FileInfoTruncated) FilePermissions() uint32 {
+	return f.Permissions
+}
+
+func (f FileInfoTruncated) FileModifiedBy() protocol.ShortID {
+	return f.ModifiedBy
+}
+
 func (f FileInfoTruncated) ConvertToIgnoredFileInfo(by protocol.ShortID) protocol.FileInfo {
 	return protocol.FileInfo{
 		Name:         f.Name,
@@ -126,6 +138,18 @@ func (f FileInfoTruncated) ConvertToIgnoredFileInfo(by protocol.ShortID) protoco
 		Version:      f.Version,
 		RawBlockSize: f.RawBlockSize,
 		LocalFlags:   protocol.FlagLocalIgnored,
+	}
+}
+
+func (f FileInfoTruncated) ConvertToDeletedFileInfo(by protocol.ShortID, localFlags uint32) protocol.FileInfo {
+	return protocol.FileInfo{
+		Name:       f.Name,
+		Type:       f.Type,
+		ModifiedS:  time.Now().Unix(),
+		ModifiedBy: by,
+		Deleted:    true,
+		Version:    f.Version.Update(by),
+		LocalFlags: localFlags,
 	}
 }
 
@@ -164,7 +188,7 @@ func (vl VersionList) String() string {
 // update brings the VersionList up to date with file. It returns the updated
 // VersionList, a potentially removed old FileVersion and its index, as well as
 // the index where the new FileVersion was inserted.
-func (vl VersionList) update(folder, device []byte, file protocol.FileInfo, t readOnlyTransaction) (_ VersionList, removedFV FileVersion, removedAt int, insertedAt int) {
+func (vl VersionList) update(folder, device []byte, file protocol.FileInfo, t readOnlyTransaction) (_ VersionList, removedFV FileVersion, removedAt int, insertedAt int, err error) {
 	vl, removedFV, removedAt = vl.pop(device)
 
 	nv := FileVersion{
@@ -187,7 +211,7 @@ func (vl VersionList) update(folder, device []byte, file protocol.FileInfo, t re
 			// The version at this point in the list is equal to or lesser
 			// ("older") than us. We insert ourselves in front of it.
 			vl = vl.insertAt(i, nv)
-			return vl, removedFV, removedAt, i
+			return vl, removedFV, removedAt, i, nil
 
 		case protocol.ConcurrentLesser, protocol.ConcurrentGreater:
 			// The version at this point is in conflict with us. We must pull
@@ -198,9 +222,11 @@ func (vl VersionList) update(folder, device []byte, file protocol.FileInfo, t re
 			// to determine the winner.)
 			//
 			// A surprise missing file entry here is counted as a win for us.
-			if of, ok := t.getFile(folder, vl.Versions[i].Device, []byte(file.Name)); !ok || file.WinsConflict(of) {
+			if of, ok, err := t.getFile(folder, vl.Versions[i].Device, []byte(file.Name)); err != nil {
+				return vl, removedFV, removedAt, i, err
+			} else if !ok || file.WinsConflict(of) {
 				vl = vl.insertAt(i, nv)
-				return vl, removedFV, removedAt, i
+				return vl, removedFV, removedAt, i, nil
 			}
 		}
 	}
@@ -208,7 +234,7 @@ func (vl VersionList) update(folder, device []byte, file protocol.FileInfo, t re
 	// We didn't find a position for an insert above, so append to the end.
 	vl.Versions = append(vl.Versions, nv)
 
-	return vl, removedFV, removedAt, len(vl.Versions) - 1
+	return vl, removedFV, removedAt, len(vl.Versions) - 1, nil
 }
 
 func (vl VersionList) insertAt(i int, v FileVersion) VersionList {

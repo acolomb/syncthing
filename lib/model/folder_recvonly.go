@@ -12,6 +12,7 @@ import (
 
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/db"
+	"github.com/syncthing/syncthing/lib/events"
 	"github.com/syncthing/syncthing/lib/fs"
 	"github.com/syncthing/syncthing/lib/ignore"
 	"github.com/syncthing/syncthing/lib/protocol"
@@ -56,8 +57,8 @@ type receiveOnlyFolder struct {
 	*sendReceiveFolder
 }
 
-func newReceiveOnlyFolder(model *model, fset *db.FileSet, ignores *ignore.Matcher, cfg config.FolderConfiguration, ver versioner.Versioner, fs fs.Filesystem) service {
-	sr := newSendReceiveFolder(model, fset, ignores, cfg, ver, fs).(*sendReceiveFolder)
+func newReceiveOnlyFolder(model *model, fset *db.FileSet, ignores *ignore.Matcher, cfg config.FolderConfiguration, ver versioner.Versioner, fs fs.Filesystem, evLogger events.Logger, ioLimiter *byteSemaphore) service {
+	sr := newSendReceiveFolder(model, fset, ignores, cfg, ver, fs, evLogger, ioLimiter).(*sendReceiveFolder)
 	sr.localFlags = protocol.FlagLocalReceiveOnly // gets propagated to the scanner, and set on locally changed files
 	return &receiveOnlyFolder{sr}
 }
@@ -78,7 +79,9 @@ func (f *receiveOnlyFolder) Revert() {
 
 	batch := make([]protocol.FileInfo, 0, maxBatchSizeFiles)
 	batchSizeBytes := 0
-	f.fset.WithHave(protocol.LocalDeviceID, func(intf db.FileIntf) bool {
+	snap := f.fset.Snapshot()
+	defer snap.Release()
+	snap.WithHave(protocol.LocalDeviceID, func(intf db.FileIntf) bool {
 		fi := intf.(protocol.FileInfo)
 		if !fi.IsReceiveOnlyChanged() {
 			// We're only interested in files that have changed locally in
@@ -92,7 +95,7 @@ func (f *receiveOnlyFolder) Revert() {
 			// We'll delete files directly, directories get queued and
 			// handled below.
 
-			handled, err := delQueue.handle(fi)
+			handled, err := delQueue.handle(fi, snap)
 			if err != nil {
 				l.Infof("Revert: deleting %s: %v\n", fi.Name, err)
 				return true // continue
@@ -104,8 +107,7 @@ func (f *receiveOnlyFolder) Revert() {
 			fi = protocol.FileInfo{
 				Name:       fi.Name,
 				Type:       fi.Type,
-				ModifiedS:  fi.ModifiedS,
-				ModifiedNs: fi.ModifiedNs,
+				ModifiedS:  time.Now().Unix(),
 				ModifiedBy: f.shortID,
 				Deleted:    true,
 				Version:    protocol.Vector{}, // if this file ever resurfaces anywhere we want our delete to be strictly older
@@ -137,7 +139,7 @@ func (f *receiveOnlyFolder) Revert() {
 	batchSizeBytes = 0
 
 	// Handle any queued directories
-	deleted, err := delQueue.flush()
+	deleted, err := delQueue.flush(snap)
 	if err != nil {
 		l.Infoln("Revert:", err)
 	}
@@ -166,15 +168,15 @@ func (f *receiveOnlyFolder) Revert() {
 // directories for last.
 type deleteQueue struct {
 	handler interface {
-		deleteItemOnDisk(item protocol.FileInfo, scanChan chan<- string) error
-		deleteDirOnDisk(dir string, scanChan chan<- string) error
+		deleteItemOnDisk(item protocol.FileInfo, snap *db.Snapshot, scanChan chan<- string) error
+		deleteDirOnDisk(dir string, snap *db.Snapshot, scanChan chan<- string) error
 	}
 	ignores  *ignore.Matcher
 	dirs     []string
 	scanChan chan<- string
 }
 
-func (q *deleteQueue) handle(fi protocol.FileInfo) (bool, error) {
+func (q *deleteQueue) handle(fi protocol.FileInfo, snap *db.Snapshot) (bool, error) {
 	// Things that are ignored but not marked deletable are not processed.
 	ign := q.ignores.Match(fi.Name)
 	if ign.IsIgnored() && !ign.IsDeletable() {
@@ -188,11 +190,11 @@ func (q *deleteQueue) handle(fi protocol.FileInfo) (bool, error) {
 	}
 
 	// Kill it.
-	err := q.handler.deleteItemOnDisk(fi, q.scanChan)
+	err := q.handler.deleteItemOnDisk(fi, snap, q.scanChan)
 	return true, err
 }
 
-func (q *deleteQueue) flush() ([]string, error) {
+func (q *deleteQueue) flush(snap *db.Snapshot) ([]string, error) {
 	// Process directories from the leaves inward.
 	sort.Sort(sort.Reverse(sort.StringSlice(q.dirs)))
 
@@ -200,7 +202,7 @@ func (q *deleteQueue) flush() ([]string, error) {
 	var deleted []string
 
 	for _, dir := range q.dirs {
-		if err := q.handler.deleteDirOnDisk(dir, q.scanChan); err == nil {
+		if err := q.handler.deleteDirOnDisk(dir, snap, q.scanChan); err == nil {
 			deleted = append(deleted, dir)
 		} else if err != nil && firstError == nil {
 			firstError = err

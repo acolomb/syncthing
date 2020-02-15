@@ -25,6 +25,8 @@ import (
 // update the config version. The order of migrations doesn't matter here,
 // put the newest on top for readability.
 var migrations = migrationSet{
+	{30, migrateToConfigV30},
+	{29, migrateToConfigV29},
 	{28, migrateToConfigV28},
 	{27, migrateToConfigV27},
 	{26, nil}, // triggers database update
@@ -81,6 +83,26 @@ func (m migration) apply(cfg *Configuration) {
 		m.convert(cfg)
 	}
 	cfg.Version = m.targetVersion
+}
+
+func migrateToConfigV30(cfg *Configuration) {
+	// The "max concurrent scans" option is now spelled "max folder concurrency"
+	// to be more general.
+	cfg.Options.RawMaxFolderConcurrency = cfg.Options.DeprecatedMaxConcurrentScans
+	cfg.Options.DeprecatedMaxConcurrentScans = 0
+}
+
+func migrateToConfigV29(cfg *Configuration) {
+	// The new crash reporting option should follow the state of global
+	// discovery / usage reporting, and we should display an appropriate
+	// notification.
+	if cfg.Options.GlobalAnnEnabled || cfg.Options.URAccepted > 0 {
+		cfg.Options.CREnabled = true
+		cfg.Options.UnackedNotificationIDs = append(cfg.Options.UnackedNotificationIDs, "crAutoEnabled")
+	} else {
+		cfg.Options.CREnabled = false
+		cfg.Options.UnackedNotificationIDs = append(cfg.Options.UnackedNotificationIDs, "crAutoDisabled")
+	}
 }
 
 func migrateToConfigV28(cfg *Configuration) {
@@ -202,12 +224,12 @@ func migrateToConfigV18(cfg *Configuration) {
 func migrateToConfigV15(cfg *Configuration) {
 	// Undo v0.13.0 broken migration
 
-	for i, addr := range cfg.Options.GlobalAnnServers {
+	for i, addr := range cfg.Options.RawGlobalAnnServers {
 		switch addr {
 		case "default-v4v2/":
-			cfg.Options.GlobalAnnServers[i] = "default-v4"
+			cfg.Options.RawGlobalAnnServers[i] = "default-v4"
 		case "default-v6v2/":
-			cfg.Options.GlobalAnnServers[i] = "default-v6"
+			cfg.Options.RawGlobalAnnServers[i] = "default-v6"
 		}
 	}
 }
@@ -234,9 +256,9 @@ func migrateToConfigV14(cfg *Configuration) {
 	hasDefault := false
 	for _, raddr := range cfg.Options.DeprecatedRelayServers {
 		if raddr == "dynamic+https://relays.syncthing.net/endpoint" {
-			for i, addr := range cfg.Options.ListenAddresses {
+			for i, addr := range cfg.Options.RawListenAddresses {
 				if addr == "tcp://0.0.0.0:22000" {
-					cfg.Options.ListenAddresses[i] = "default"
+					cfg.Options.RawListenAddresses[i] = "default"
 					hasDefault = true
 					break
 				}
@@ -255,16 +277,16 @@ func migrateToConfigV14(cfg *Configuration) {
 		if addr == "" {
 			continue
 		}
-		cfg.Options.ListenAddresses = append(cfg.Options.ListenAddresses, addr)
+		cfg.Options.RawListenAddresses = append(cfg.Options.RawListenAddresses, addr)
 	}
 
 	cfg.Options.DeprecatedRelayServers = nil
 
 	// For consistency
-	sort.Strings(cfg.Options.ListenAddresses)
+	sort.Strings(cfg.Options.RawListenAddresses)
 
 	var newAddrs []string
-	for _, addr := range cfg.Options.GlobalAnnServers {
+	for _, addr := range cfg.Options.RawGlobalAnnServers {
 		uri, err := url.Parse(addr)
 		if err != nil {
 			// That's odd. Skip the broken address.
@@ -277,7 +299,7 @@ func migrateToConfigV14(cfg *Configuration) {
 
 		newAddrs = append(newAddrs, addr)
 	}
-	cfg.Options.GlobalAnnServers = newAddrs
+	cfg.Options.RawGlobalAnnServers = newAddrs
 
 	for i, fcfg := range cfg.Folders {
 		if fcfg.DeprecatedReadOnly {
@@ -301,9 +323,9 @@ func migrateToConfigV13(cfg *Configuration) {
 
 func migrateToConfigV12(cfg *Configuration) {
 	// Change listen address schema
-	for i, addr := range cfg.Options.ListenAddresses {
+	for i, addr := range cfg.Options.RawListenAddresses {
 		if len(addr) > 0 && !strings.HasPrefix(addr, "tcp://") {
-			cfg.Options.ListenAddresses[i] = util.Address("tcp", addr)
+			cfg.Options.RawListenAddresses[i] = util.Address("tcp", addr)
 		}
 	}
 
@@ -318,7 +340,7 @@ func migrateToConfigV12(cfg *Configuration) {
 	// Use new discovery server
 	var newDiscoServers []string
 	var useDefault bool
-	for _, addr := range cfg.Options.GlobalAnnServers {
+	for _, addr := range cfg.Options.RawGlobalAnnServers {
 		if addr == "udp4://announce.syncthing.net:22026" {
 			useDefault = true
 		} else if addr == "udp6://announce-v6.syncthing.net:22026" {
@@ -330,7 +352,7 @@ func migrateToConfigV12(cfg *Configuration) {
 	if useDefault {
 		newDiscoServers = append(newDiscoServers, "default")
 	}
-	cfg.Options.GlobalAnnServers = newDiscoServers
+	cfg.Options.RawGlobalAnnServers = newDiscoServers
 
 	// Use new multicast group
 	if cfg.Options.LocalAnnMCAddr == "[ff32::5222]:21026" {

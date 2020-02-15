@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pkg/errors"
+
 	"github.com/syncthing/syncthing/lib/fs"
 	"github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/rand"
@@ -29,7 +31,7 @@ import (
 
 const (
 	OldestHandledVersion = 10
-	CurrentVersion       = 28
+	CurrentVersion       = 30
 	MaxRescanIntervalS   = 365 * 24 * 60 * 60
 )
 
@@ -86,9 +88,14 @@ var (
 		"stun.voiparound.com:3478",
 		"stun.voipbuster.com:3478",
 		"stun.voipstunt.com:3478",
-		"stun.voxgratia.org:3478",
 		"stun.xten.com:3478",
 	}
+)
+
+var (
+	errFolderIDEmpty     = errors.New("folder has empty ID")
+	errFolderIDDuplicate = errors.New("folder has duplicate ID")
+	errFolderPathEmpty   = errors.New("folder has empty path")
 )
 
 func New(myID protocol.DeviceID) Configuration {
@@ -102,7 +109,8 @@ func New(myID protocol.DeviceID) Configuration {
 
 	// Can't happen.
 	if err := cfg.prepare(myID); err != nil {
-		panic("bug: error in preparing new folder: " + err.Error())
+		l.Warnln("bug: error in preparing new folder:", err)
+		panic("error in preparing new folder")
 	}
 
 	return cfg
@@ -113,18 +121,18 @@ func NewWithFreePorts(myID protocol.DeviceID) (Configuration, error) {
 
 	port, err := getFreePort("127.0.0.1", DefaultGUIPort)
 	if err != nil {
-		return Configuration{}, fmt.Errorf("get free port (GUI): %v", err)
+		return Configuration{}, errors.Wrap(err, "get free port (GUI)")
 	}
 	cfg.GUI.RawAddress = fmt.Sprintf("127.0.0.1:%d", port)
 
 	port, err = getFreePort("0.0.0.0", DefaultTCPPort)
 	if err != nil {
-		return Configuration{}, fmt.Errorf("get free port (BEP): %v", err)
+		return Configuration{}, errors.Wrap(err, "get free port (BEP)")
 	}
 	if port == DefaultTCPPort {
-		cfg.Options.ListenAddresses = []string{"default"}
+		cfg.Options.RawListenAddresses = []string{"default"}
 	} else {
-		cfg.Options.ListenAddresses = []string{
+		cfg.Options.RawListenAddresses = []string{
 			fmt.Sprintf("tcp://%s", net.JoinHostPort("0.0.0.0", strconv.Itoa(port))),
 			"dynamic+https://relays.syncthing.net/endpoint",
 		}
@@ -263,6 +271,16 @@ found:
 func (cfg *Configuration) clean() error {
 	util.FillNilSlices(&cfg.Options)
 
+	// Ensure that the device list is
+	// - free from duplicates
+	// - no devices with empty ID
+	// - sorted by ID
+	// Happen before preparting folders as that needs a correct device list.
+	cfg.Devices = ensureNoDuplicateOrEmptyIDDevices(cfg.Devices)
+	sort.Slice(cfg.Devices, func(a, b int) bool {
+		return cfg.Devices[a].DeviceID.Compare(cfg.Devices[b].DeviceID) == -1
+	})
+
 	// Prepare folders and check for duplicates. Duplicates are bad and
 	// dangerous, can't currently be resolved in the GUI, and shouldn't
 	// happen when configured by the GUI. We return with an error in that
@@ -273,17 +291,22 @@ func (cfg *Configuration) clean() error {
 		folder.prepare()
 
 		if folder.ID == "" {
-			return fmt.Errorf("folder with empty ID in configuration")
+			return errFolderIDEmpty
+		}
+
+		if folder.Path == "" {
+			return fmt.Errorf("folder %q: %v", folder.ID, errFolderPathEmpty)
 		}
 
 		if _, ok := existingFolders[folder.ID]; ok {
-			return fmt.Errorf("duplicate folder ID %q in configuration", folder.ID)
+			return fmt.Errorf("folder %q: %v", folder.ID, errFolderIDDuplicate)
 		}
+
 		existingFolders[folder.ID] = folder
 	}
 
-	cfg.Options.ListenAddresses = util.UniqueTrimmedStrings(cfg.Options.ListenAddresses)
-	cfg.Options.GlobalAnnServers = util.UniqueTrimmedStrings(cfg.Options.GlobalAnnServers)
+	cfg.Options.RawListenAddresses = util.UniqueTrimmedStrings(cfg.Options.RawListenAddresses)
+	cfg.Options.RawGlobalAnnServers = util.UniqueTrimmedStrings(cfg.Options.RawGlobalAnnServers)
 
 	if cfg.Version > 0 && cfg.Version < OldestHandledVersion {
 		l.Warnf("Configuration version %d is deprecated. Attempting best effort conversion, but please verify manually.", cfg.Version)
@@ -297,14 +320,6 @@ func (cfg *Configuration) clean() error {
 	for _, device := range cfg.Devices {
 		existingDevices[device.DeviceID] = true
 	}
-
-	// Ensure that the device list is
-	// - free from duplicates
-	// - sorted by ID
-	cfg.Devices = ensureNoDuplicateDevices(cfg.Devices)
-	sort.Slice(cfg.Devices, func(a, b int) bool {
-		return cfg.Devices[a].DeviceID.Compare(cfg.Devices[b].DeviceID) == -1
-	})
 
 	// Ensure that the folder list is sorted by ID
 	sort.Slice(cfg.Folders, func(a, b int) bool {
@@ -381,7 +396,7 @@ nextPendingDevice:
 	// Deprecated protocols are removed from the list of listeners and
 	// device addresses. So far just kcp*.
 	for _, prefix := range []string{"kcp"} {
-		cfg.Options.ListenAddresses = filterURLSchemePrefix(cfg.Options.ListenAddresses, prefix)
+		cfg.Options.RawListenAddresses = filterURLSchemePrefix(cfg.Options.RawListenAddresses, prefix)
 		for i := range cfg.Devices {
 			dev := &cfg.Devices[i]
 			dev.Addresses = filterURLSchemePrefix(dev.Addresses, prefix)
@@ -464,14 +479,14 @@ loop:
 	return devices[0:count]
 }
 
-func ensureNoDuplicateDevices(devices []DeviceConfiguration) []DeviceConfiguration {
+func ensureNoDuplicateOrEmptyIDDevices(devices []DeviceConfiguration) []DeviceConfiguration {
 	count := len(devices)
 	i := 0
 	seenDevices := make(map[protocol.DeviceID]bool)
 loop:
 	for i < count {
 		id := devices[i].DeviceID
-		if _, ok := seenDevices[id]; ok {
+		if _, ok := seenDevices[id]; ok || id == protocol.EmptyDeviceID {
 			devices[i] = devices[count-1]
 			count--
 			continue loop

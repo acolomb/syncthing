@@ -14,6 +14,7 @@ type TestModel struct {
 	weakHash      uint32
 	fromTemporary bool
 	indexFn       func(DeviceID, string, []FileInfo)
+	ccFn          func(DeviceID, ClusterConfig)
 	closedCh      chan struct{}
 	closedErr     error
 }
@@ -24,13 +25,15 @@ func newTestModel() *TestModel {
 	}
 }
 
-func (t *TestModel) Index(deviceID DeviceID, folder string, files []FileInfo) {
+func (t *TestModel) Index(deviceID DeviceID, folder string, files []FileInfo) error {
 	if t.indexFn != nil {
 		t.indexFn(deviceID, folder, files)
 	}
+	return nil
 }
 
-func (t *TestModel) IndexUpdate(deviceID DeviceID, folder string, files []FileInfo) {
+func (t *TestModel) IndexUpdate(deviceID DeviceID, folder string, files []FileInfo) error {
+	return nil
 }
 
 func (t *TestModel) Request(deviceID DeviceID, folder, name string, size int32, offset int64, hash []byte, weakHash uint32, fromTemporary bool) (RequestResponse, error) {
@@ -51,10 +54,15 @@ func (t *TestModel) Closed(conn Connection, err error) {
 	close(t.closedCh)
 }
 
-func (t *TestModel) ClusterConfig(deviceID DeviceID, config ClusterConfig) {
+func (t *TestModel) ClusterConfig(deviceID DeviceID, config ClusterConfig) error {
+	if t.ccFn != nil {
+		t.ccFn(deviceID, config)
+	}
+	return nil
 }
 
-func (t *TestModel) DownloadProgress(DeviceID, string, []FileDownloadProgressUpdate) {
+func (t *TestModel) DownloadProgress(DeviceID, string, []FileDownloadProgressUpdate) error {
+	return nil
 }
 
 func (t *TestModel) closedError() error {

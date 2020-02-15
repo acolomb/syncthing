@@ -8,13 +8,14 @@ package model
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand"
 	"path/filepath"
 	"sort"
 	"sync/atomic"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/db"
@@ -28,17 +29,16 @@ import (
 	"github.com/syncthing/syncthing/lib/stats"
 	"github.com/syncthing/syncthing/lib/sync"
 	"github.com/syncthing/syncthing/lib/watchaggregator"
+
+	"github.com/thejerf/suture"
 )
 
-// scanLimiter limits the number of concurrent scans. A limit of zero means no limit.
-var scanLimiter = newByteSemaphore(0)
-
-var errWatchNotStarted = errors.New("not started")
-
 type folder struct {
+	suture.Service
 	stateTracker
 	config.FolderConfiguration
 	*stats.FolderStatisticsReference
+	ioLimiter *byteSemaphore
 
 	localFlags uint32
 
@@ -47,14 +47,12 @@ type folder struct {
 	fset    *db.FileSet
 	ignores *ignore.Matcher
 	ctx     context.Context
-	cancel  context.CancelFunc
 
 	scanInterval        time.Duration
 	scanTimer           *time.Timer
 	scanNow             chan rescanRequest
 	scanDelay           chan time.Duration
 	initialScanFinished chan struct{}
-	stopped             chan struct{}
 	scanErrors          []FileError
 	scanErrorsMut       sync.Mutex
 
@@ -78,27 +76,23 @@ type puller interface {
 	pull() bool // true when successfull and should not be retried
 }
 
-func newFolder(model *model, fset *db.FileSet, ignores *ignore.Matcher, cfg config.FolderConfiguration) folder {
-	ctx, cancel := context.WithCancel(context.Background())
-
+func newFolder(model *model, fset *db.FileSet, ignores *ignore.Matcher, cfg config.FolderConfiguration, evLogger events.Logger, ioLimiter *byteSemaphore) folder {
 	return folder{
-		stateTracker:              newStateTracker(cfg.ID),
+		stateTracker:              newStateTracker(cfg.ID, evLogger),
 		FolderConfiguration:       cfg,
 		FolderStatisticsReference: stats.NewFolderStatisticsReference(model.db, cfg.ID),
+		ioLimiter:                 ioLimiter,
 
 		model:   model,
 		shortID: model.shortID,
 		fset:    fset,
 		ignores: ignores,
-		ctx:     ctx,
-		cancel:  cancel,
 
 		scanInterval:        time.Duration(cfg.RescanIntervalS) * time.Second,
 		scanTimer:           time.NewTimer(time.Millisecond), // The first scan should be done immediately.
 		scanNow:             make(chan rescanRequest),
 		scanDelay:           make(chan time.Duration),
 		initialScanFinished: make(chan struct{}),
-		stopped:             make(chan struct{}),
 		scanErrorsMut:       sync.NewMutex(),
 
 		pullScheduled: make(chan struct{}, 1), // This needs to be 1-buffered so that we queue a pull if we're busy when it comes.
@@ -109,9 +103,11 @@ func newFolder(model *model, fset *db.FileSet, ignores *ignore.Matcher, cfg conf
 	}
 }
 
-func (f *folder) Serve() {
+func (f *folder) serve(ctx context.Context) {
 	atomic.AddInt32(&f.model.foldersRunning, 1)
 	defer atomic.AddInt32(&f.model.foldersRunning, -1)
+
+	f.ctx = ctx
 
 	l.Debugln(f, "starting")
 	defer l.Debugln(f, "exiting")
@@ -119,7 +115,6 @@ func (f *folder) Serve() {
 	defer func() {
 		f.scanTimer.Stop()
 		f.setState(FolderIdle)
-		close(f.stopped)
 	}()
 
 	pause := f.basePause()
@@ -134,7 +129,7 @@ func (f *folder) Serve() {
 
 	pull := func() {
 		startTime := time.Now()
-		if f.puller.pull() {
+		if f.pull() {
 			// We're good. Don't schedule another pull and reset
 			// the pause interval.
 			pause = f.basePause()
@@ -168,26 +163,29 @@ func (f *folder) Serve() {
 		case <-initialCompleted:
 			// Initial scan has completed, we should do a pull
 			initialCompleted = nil // never hit this case again
-			if !f.puller.pull() {
+			if !f.pull() {
 				// Pulling failed, try again later.
 				pullFailTimer.Reset(pause)
 			}
 
 		case <-f.scanTimer.C:
-			l.Debugln(f, "Scanning subdirectories")
+			l.Debugln(f, "Scanning due to timer")
 			f.scanTimerFired()
 
 		case req := <-f.scanNow:
+			l.Debugln(f, "Scanning due to request")
 			req.err <- f.scanSubdirs(req.subdirs)
 
 		case next := <-f.scanDelay:
+			l.Debugln(f, "Delaying scan")
 			f.scanTimer.Reset(next)
 
 		case fsEvents := <-f.watchChan:
-			l.Debugln(f, "filesystem notification rescan")
+			l.Debugln(f, "Scan due to watcher")
 			f.scanSubdirs(fsEvents)
 
 		case <-f.restartWatchChan:
+			l.Debugln(f, "Restart watcher")
 			f.restartWatch()
 		}
 	}
@@ -220,8 +218,8 @@ func (f *folder) SchedulePull() {
 	}
 }
 
-func (f *folder) Jobs() ([]string, []string) {
-	return nil, nil
+func (f *folder) Jobs(_, _ int) ([]string, []string, int) {
+	return nil, nil, 0
 }
 
 func (f *folder) Scan(subdirs []string) error {
@@ -254,11 +252,6 @@ func (f *folder) Delay(next time.Duration) {
 	f.scanDelay <- next
 }
 
-func (f *folder) Stop() {
-	f.cancel()
-	<-f.stopped
-}
-
 // CheckHealth checks the folder for common errors, updates the folder state
 // and returns the current folder error, or nil if the folder is healthy.
 func (f *folder) CheckHealth() error {
@@ -278,23 +271,77 @@ func (f *folder) getHealthError() error {
 	dbPath := locations.Get(locations.Database)
 	if usage, err := fs.NewFilesystem(fs.FilesystemTypeBasic, dbPath).Usage("."); err == nil {
 		if err = config.CheckFreeSpace(f.model.cfg.Options().MinHomeDiskFree, usage); err != nil {
-			return fmt.Errorf("insufficient space on disk for database (%v): %v", dbPath, err)
+			return errors.Wrapf(err, "insufficient space on disk for database (%v)", dbPath)
 		}
 	}
 
 	return nil
 }
 
+func (f *folder) pull() bool {
+	select {
+	case <-f.initialScanFinished:
+	default:
+		// Once the initial scan finished, a pull will be scheduled
+		return true
+	}
+
+	// If there is nothing to do, don't even enter sync-waiting state.
+	abort := true
+	snap := f.fset.Snapshot()
+	snap.WithNeed(protocol.LocalDeviceID, func(intf db.FileIntf) bool {
+		abort = false
+		return false
+	})
+	snap.Release()
+	if abort {
+		return true
+	}
+
+	f.setState(FolderSyncWaiting)
+	defer f.setState(FolderIdle)
+
+	f.ioLimiter.take(1)
+	defer f.ioLimiter.give(1)
+
+	return f.puller.pull()
+}
+
 func (f *folder) scanSubdirs(subDirs []string) error {
-	if err := f.CheckHealth(); err != nil {
+	if err := f.getHealthError(); err != nil {
+		// If there is a health error we set it as the folder error. We do not
+		// clear the folder error if there is no health error, as there might be
+		// an *other* folder error (failed to load ignores, for example). Hence
+		// we do not use the CheckHealth() convenience function here.
+		f.setError(err)
 		return err
 	}
 
-	mtimefs := f.fset.MtimeFS()
+	oldHash := f.ignores.Hash()
+	if err := f.ignores.Load(".stignore"); err != nil && !fs.IsNotExist(err) {
+		err = errors.Wrap(err, "loading ignores")
+		f.setError(err)
+		return err
+	}
 
+	// Check on the way out if the ignore patterns changed as part of scanning
+	// this folder. If they did we should schedule a pull of the folder so that
+	// we request things we might have suddenly become unignored and so on.
+	defer func() {
+		if f.ignores.Hash() != oldHash {
+			l.Debugln("Folder", f.Description(), "ignore patterns change detected while scanning; triggering puller")
+			f.ignoresUpdated()
+			f.SchedulePull()
+		}
+	}()
+
+	// We've passed all health checks so now mark ourselves healthy and queued
+	// for scanning.
+	f.setError(nil)
 	f.setState(FolderScanWaiting)
-	scanLimiter.take(1)
-	defer scanLimiter.give(1)
+
+	f.ioLimiter.take(1)
+	defer f.ioLimiter.give(1)
 
 	for i := range subDirs {
 		sub := osutil.NativeFilename(subDirs[i])
@@ -309,48 +356,37 @@ func (f *folder) scanSubdirs(subDirs []string) error {
 		subDirs[i] = sub
 	}
 
-	// Check if the ignore patterns changed as part of scanning this folder.
-	// If they did we should schedule a pull of the folder so that we
-	// request things we might have suddenly become unignored and so on.
-	oldHash := f.ignores.Hash()
-	defer func() {
-		if f.ignores.Hash() != oldHash {
-			l.Debugln("Folder", f.Description(), "ignore patterns change detected while scanning; triggering puller")
-			f.ignoresUpdated()
-			f.SchedulePull()
-		}
-	}()
-
-	if err := f.ignores.Load(".stignore"); err != nil && !fs.IsNotExist(err) {
-		err = fmt.Errorf("loading ignores: %v", err)
-		f.setError(err)
-		return err
-	}
+	snap := f.fset.Snapshot()
+	// We release explicitly later in this function, however we might exit early
+	// and it's ok to release twice.
+	defer snap.Release()
 
 	// Clean the list of subitems to ensure that we start at a known
 	// directory, and don't scan subdirectories of things we've already
 	// scanned.
 	subDirs = unifySubs(subDirs, func(file string) bool {
-		_, ok := f.fset.Get(protocol.LocalDeviceID, file)
+		_, ok := snap.Get(protocol.LocalDeviceID, file)
 		return ok
 	})
 
 	f.setState(FolderScanning)
 
+	mtimefs := f.fset.MtimeFS()
 	fchan := scanner.Walk(f.ctx, scanner.Config{
 		Folder:                f.ID,
 		Subs:                  subDirs,
 		Matcher:               f.ignores,
 		TempLifetime:          time.Duration(f.model.cfg.Options().KeepTemporariesH) * time.Hour,
-		CurrentFiler:          cFiler{f.fset},
+		CurrentFiler:          cFiler{snap},
 		Filesystem:            mtimefs,
 		IgnorePerms:           f.IgnorePerms,
 		AutoNormalize:         f.AutoNormalize,
 		Hashers:               f.model.numHashers(f.ID),
 		ShortID:               f.shortID,
 		ProgressTickIntervalS: f.ScanProgressIntervalS,
-		UseLargeBlocks:        f.UseLargeBlocks,
 		LocalFlags:            f.localFlags,
+		ModTimeWindow:         f.ModTimeWindow(),
+		EventLogger:           f.evLogger,
 	})
 
 	batchFn := func(fs []protocol.FileInfo) error {
@@ -366,10 +402,10 @@ func (f *folder) scanSubdirs(subDirs []string) error {
 		oldBatchFn := batchFn // can't reference batchFn directly (recursion)
 		batchFn = func(fs []protocol.FileInfo) error {
 			for i := range fs {
-				switch gf, ok := f.fset.GetGlobal(fs[i].Name); {
+				switch gf, ok := snap.GetGlobal(fs[i].Name); {
 				case !ok:
 					continue
-				case gf.IsEquivalentOptional(fs[i], false, false, protocol.FlagLocalReceiveOnly):
+				case gf.IsEquivalentOptional(fs[i], f.ModTimeWindow(), false, false, protocol.FlagLocalReceiveOnly):
 					// What we have locally is equivalent to the global file.
 					fs[i].Version = fs[i].Version.Merge(gf.Version)
 					fallthrough
@@ -423,10 +459,21 @@ func (f *folder) scanSubdirs(subDirs []string) error {
 	// ignored files.
 	var toIgnore []db.FileInfoTruncated
 	ignoredParent := ""
+
+	snap.Release()
+	snap = f.fset.Snapshot()
+	defer snap.Release()
+
 	for _, sub := range subDirs {
 		var iterError error
 
-		f.fset.WithPrefixedHaveTruncated(protocol.LocalDeviceID, sub, func(fi db.FileIntf) bool {
+		snap.WithPrefixedHaveTruncated(protocol.LocalDeviceID, sub, func(fi db.FileIntf) bool {
+			select {
+			case <-f.ctx.Done():
+				return false
+			default:
+			}
+
 			file := fi.(db.FileInfoTruncated)
 
 			if err := batch.flushIfFull(); err != nil {
@@ -463,7 +510,7 @@ func (f *folder) scanSubdirs(subDirs []string) error {
 					return true
 				}
 
-				l.Debugln("marking file as ignored", f)
+				l.Debugln("marking file as ignored", file)
 				nf := file.ConvertToIgnoredFileInfo(f.shortID)
 				batch.append(nf)
 				changes++
@@ -485,24 +532,12 @@ func (f *folder) scanSubdirs(subDirs []string) error {
 					}
 					return true
 				}
-				nf := protocol.FileInfo{
-					Name:       file.Name,
-					Type:       file.Type,
-					Size:       0,
-					ModifiedS:  file.ModifiedS,
-					ModifiedNs: file.ModifiedNs,
-					ModifiedBy: f.shortID,
-					Deleted:    true,
-					Version:    file.Version.Update(f.shortID),
-					LocalFlags: f.localFlags,
-				}
-				// We do not want to override the global version
-				// with the deleted file. Keeping only our local
-				// counter makes sure we are in conflict with any
-				// other existing versions, which will be resolved
-				// by the normal pulling mechanisms.
+				nf := file.ConvertToDeletedFileInfo(f.shortID, f.localFlags)
 				if file.ShouldConflict() {
-					nf.Version = nf.Version.DropOthers(f.shortID)
+					// We do not want to override the global version with
+					// the deleted file. Setting to an empty version makes
+					// sure the file gets in sync on the following pull.
+					nf.Version = protocol.Vector{}
 				}
 
 				batch.append(nf)
@@ -510,6 +545,12 @@ func (f *folder) scanSubdirs(subDirs []string) error {
 			}
 			return true
 		})
+
+		select {
+		case <-f.ctx.Done():
+			return f.ctx.Err()
+		default:
+		}
 
 		if iterError == nil && len(toIgnore) > 0 {
 			for _, file := range toIgnore {
@@ -565,19 +606,8 @@ func (f *folder) WatchError() error {
 func (f *folder) stopWatch() {
 	f.watchMut.Lock()
 	f.watchCancel()
-	prevErr := f.watchErr
-	f.watchErr = errWatchNotStarted
 	f.watchMut.Unlock()
-	if prevErr != errWatchNotStarted {
-		data := map[string]interface{}{
-			"folder": f.ID,
-			"to":     errWatchNotStarted.Error(),
-		}
-		if prevErr != nil {
-			data["from"] = prevErr.Error()
-		}
-		events.Default.Log(events.FolderWatchStateChanged, data)
-	}
+	f.setWatchError(nil)
 }
 
 // scheduleWatchRestart makes sure watching is restarted from the main for loop
@@ -632,7 +662,7 @@ func (f *folder) monitorWatch(ctx context.Context) {
 				failTimer.Reset(time.Minute)
 				continue
 			}
-			watchaggregator.Aggregate(eventChan, f.watchChan, f.FolderConfiguration, f.model.cfg, aggrCtx)
+			watchaggregator.Aggregate(aggrCtx, eventChan, f.watchChan, f.FolderConfiguration, f.model.cfg, f.evLogger)
 			l.Debugln("Started filesystem watcher for folder", f.Description())
 		case err = <-errChan:
 			f.setWatchError(err)
@@ -642,7 +672,6 @@ func (f *folder) monitorWatch(ctx context.Context) {
 				if _, ok := err.(*fs.ErrWatchEventOutsideRoot); ok {
 					l.Warnln(err)
 					warnedOutside = true
-					return
 				}
 			}
 			aggrCancel()
@@ -672,25 +701,27 @@ func (f *folder) setWatchError(err error) {
 		if err != nil {
 			data["to"] = err.Error()
 		}
-		events.Default.Log(events.FolderWatchStateChanged, data)
+		f.evLogger.Log(events.FolderWatchStateChanged, data)
 	}
 	if err == nil {
 		return
 	}
-	if prevErr == errWatchNotStarted {
-		l.Infof("Error while trying to start filesystem watcher for folder %s, trying again in 1min: %v", f.Description(), err)
+	msg := fmt.Sprintf("Error while trying to start filesystem watcher for folder %s, trying again in 1min: %v", f.Description(), err)
+	if prevErr != err {
+		l.Infof(msg)
 		return
 	}
-	l.Debugf("Repeat error while trying to start filesystem watcher for folder %s, trying again in 1min: %v", f.Description(), err)
+	l.Debugf(msg)
 }
 
 // scanOnWatchErr schedules a full scan immediately if an error occurred while watching.
 func (f *folder) scanOnWatchErr() {
 	f.watchMut.Lock()
-	if f.watchErr != nil && f.watchErr != errWatchNotStarted {
+	err := f.watchErr
+	f.watchMut.Unlock()
+	if err != nil {
 		f.Delay(0)
 	}
-	f.watchMut.Unlock()
 }
 
 func (f *folder) setError(err error) {
@@ -801,7 +832,7 @@ func (f *folder) updateLocals(fs []protocol.FileInfo) {
 		filenames[i] = file.Name
 	}
 
-	events.Default.Log(events.LocalIndexUpdated, map[string]interface{}{
+	f.evLogger.Log(events.LocalIndexUpdated, map[string]interface{}{
 		"folder":    f.ID,
 		"items":     len(fs),
 		"filenames": filenames,
@@ -840,7 +871,7 @@ func (f *folder) emitDiskChangeEvents(fs []protocol.FileInfo, typeOfEvent events
 		}
 
 		// Two different events can be fired here based on what EventType is passed into function
-		events.Default.Log(typeOfEvent, map[string]string{
+		f.evLogger.Log(typeOfEvent, map[string]string{
 			"folder":     f.ID,
 			"folderID":   f.ID, // incorrect, deprecated, kept for historical compliance
 			"label":      f.Label,
@@ -887,7 +918,7 @@ func unifySubs(dirs []string, exists func(dir string) bool) []string {
 }
 
 type cFiler struct {
-	*db.FileSet
+	*db.Snapshot
 }
 
 // Implements scanner.CurrentFiler

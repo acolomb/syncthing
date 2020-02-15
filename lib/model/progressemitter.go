@@ -7,16 +7,23 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"time"
+
+	"github.com/thejerf/suture"
 
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/events"
 	"github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/sync"
+	"github.com/syncthing/syncthing/lib/util"
 )
 
 type ProgressEmitter struct {
+	suture.Service
+
+	cfg                config.Wrapper
 	registry           map[string]map[string]*sharedPullerState // folder: name: puller
 	interval           time.Duration
 	minBlocks          int
@@ -24,40 +31,43 @@ type ProgressEmitter struct {
 	connections        map[protocol.DeviceID]protocol.Connection
 	foldersByConns     map[protocol.DeviceID][]string
 	disabled           bool
+	evLogger           events.Logger
 	mut                sync.Mutex
 
 	timer *time.Timer
-
-	stop chan struct{}
 }
 
 // NewProgressEmitter creates a new progress emitter which emits
 // DownloadProgress events every interval.
-func NewProgressEmitter(cfg config.Wrapper) *ProgressEmitter {
+func NewProgressEmitter(cfg config.Wrapper, evLogger events.Logger) *ProgressEmitter {
 	t := &ProgressEmitter{
-		stop:               make(chan struct{}),
+		cfg:                cfg,
 		registry:           make(map[string]map[string]*sharedPullerState),
 		timer:              time.NewTimer(time.Millisecond),
 		sentDownloadStates: make(map[protocol.DeviceID]*sentDownloadState),
 		connections:        make(map[protocol.DeviceID]protocol.Connection),
 		foldersByConns:     make(map[protocol.DeviceID][]string),
+		evLogger:           evLogger,
 		mut:                sync.NewMutex(),
 	}
+	t.Service = util.AsService(t.serve, t.String())
 
 	t.CommitConfiguration(config.Configuration{}, cfg.RawCopy())
-	cfg.Subscribe(t)
 
 	return t
 }
 
-// Serve starts the progress emitter which starts emitting DownloadProgress
+// serve starts the progress emitter which starts emitting DownloadProgress
 // events as the progress happens.
-func (t *ProgressEmitter) Serve() {
+func (t *ProgressEmitter) serve(ctx context.Context) {
+	t.cfg.Subscribe(t)
+	defer t.cfg.Unsubscribe(t)
+
 	var lastUpdate time.Time
 	var lastCount, newCount int
 	for {
 		select {
-		case <-t.stop:
+		case <-ctx.Done():
 			l.Debugln("progress emitter: stopping")
 			return
 		case <-t.timer.C:
@@ -79,7 +89,7 @@ func (t *ProgressEmitter) Serve() {
 				lastCount = newCount
 				t.sendDownloadProgressEventLocked()
 				if len(t.connections) > 0 {
-					t.sendDownloadProgressMessagesLocked()
+					t.sendDownloadProgressMessagesLocked(ctx)
 				}
 			} else {
 				l.Debugln("progress emitter: nothing new")
@@ -104,11 +114,11 @@ func (t *ProgressEmitter) sendDownloadProgressEventLocked() {
 			output[folder][name] = puller.Progress()
 		}
 	}
-	events.Default.Log(events.DownloadProgress, output)
+	t.evLogger.Log(events.DownloadProgress, output)
 	l.Debugf("progress emitter: emitting %#v", output)
 }
 
-func (t *ProgressEmitter) sendDownloadProgressMessagesLocked() {
+func (t *ProgressEmitter) sendDownloadProgressMessagesLocked(ctx context.Context) {
 	for id, conn := range t.connections {
 		for _, folder := range t.foldersByConns[id] {
 			pullers, ok := t.registry[folder]
@@ -139,7 +149,7 @@ func (t *ProgressEmitter) sendDownloadProgressMessagesLocked() {
 			updates := state.update(folder, activePullers)
 
 			if len(updates) > 0 {
-				conn.DownloadProgress(folder, updates)
+				conn.DownloadProgress(ctx, folder, updates)
 			}
 		}
 	}
@@ -187,34 +197,32 @@ func (t *ProgressEmitter) VerifyConfiguration(from, to config.Configuration) err
 }
 
 // CommitConfiguration implements the config.Committer interface
-func (t *ProgressEmitter) CommitConfiguration(from, to config.Configuration) bool {
+func (t *ProgressEmitter) CommitConfiguration(_, to config.Configuration) bool {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
-	switch {
-	case t.disabled && to.Options.ProgressUpdateIntervalS >= 0:
-		t.disabled = false
-		l.Debugln("progress emitter: enabled")
-		fallthrough
-	case !t.disabled && from.Options.ProgressUpdateIntervalS != to.Options.ProgressUpdateIntervalS:
-		t.interval = time.Duration(to.Options.ProgressUpdateIntervalS) * time.Second
-		if t.interval < time.Second {
-			t.interval = time.Second
+	newInterval := time.Duration(to.Options.ProgressUpdateIntervalS) * time.Second
+	if newInterval > 0 {
+		if t.disabled {
+			t.disabled = false
+			l.Debugln("progress emitter: enabled")
 		}
-		l.Debugln("progress emitter: updated interval", t.interval)
-	case !t.disabled && to.Options.ProgressUpdateIntervalS < 0:
+		if t.interval != newInterval {
+			t.interval = newInterval
+			l.Debugln("progress emitter: updated interval", t.interval)
+		}
+	} else if !t.disabled {
 		t.clearLocked()
 		t.disabled = true
 		l.Debugln("progress emitter: disabled")
 	}
 	t.minBlocks = to.Options.TempIndexMinBlocks
+	if t.interval < time.Second {
+		// can't happen when we're not disabled, but better safe than sorry.
+		t.interval = time.Second
+	}
 
 	return true
-}
-
-// Stop stops the emitter.
-func (t *ProgressEmitter) Stop() {
-	t.stop <- struct{}{}
 }
 
 // Register a puller with the emitter which will start broadcasting pullers
@@ -310,7 +318,7 @@ func (t *ProgressEmitter) clearLocked() {
 		}
 		for _, folder := range state.folders() {
 			if updates := state.cleanup(folder); len(updates) > 0 {
-				conn.DownloadProgress(folder, updates)
+				conn.DownloadProgress(context.Background(), folder, updates)
 			}
 		}
 	}

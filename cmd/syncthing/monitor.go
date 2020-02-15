@@ -8,18 +8,25 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/syncthing/syncthing/lib/events"
+	"github.com/syncthing/syncthing/lib/fs"
 	"github.com/syncthing/syncthing/lib/locations"
 	"github.com/syncthing/syncthing/lib/osutil"
+	"github.com/syncthing/syncthing/lib/protocol"
 	"github.com/syncthing/syncthing/lib/sync"
+	"github.com/syncthing/syncthing/lib/syncthing"
 )
 
 var (
@@ -33,6 +40,8 @@ const (
 	loopThreshold         = 60 * time.Second
 	logFileAutoCloseDelay = 5 * time.Second
 	logFileMaxOpenTime    = time.Minute
+	panicUploadMaxWait    = 30 * time.Second
+	panicUploadNoticeWait = 10 * time.Second
 )
 
 func monitorMain(runtimeOptions RuntimeOptions) {
@@ -42,7 +51,18 @@ func monitorMain(runtimeOptions RuntimeOptions) {
 
 	logFile := runtimeOptions.logFile
 	if logFile != "-" {
-		var fileDst io.Writer = newAutoclosedFile(logFile, logFileAutoCloseDelay, logFileMaxOpenTime)
+		if expanded, err := fs.ExpandTilde(logFile); err == nil {
+			logFile = expanded
+		}
+		var fileDst io.Writer
+		if runtimeOptions.logMaxSize > 0 {
+			open := func(name string) (io.WriteCloser, error) {
+				return newAutoclosedFile(name, logFileAutoCloseDelay, logFileMaxOpenTime), nil
+			}
+			fileDst = newRotatedFile(logFile, open, int64(runtimeOptions.logMaxSize), runtimeOptions.logMaxFiles)
+		} else {
+			fileDst = newAutoclosedFile(logFile, logFileAutoCloseDelay, logFileMaxOpenTime)
+		}
 
 		if runtime.GOOS == "windows" {
 			// Translate line breaks to Windows standard
@@ -63,7 +83,6 @@ func monitorMain(runtimeOptions RuntimeOptions) {
 	var restarts [countRestarts]time.Time
 
 	stopSign := make(chan os.Signal, 1)
-	sigTerm := syscall.Signal(15)
 	signal.Notify(stopSign, os.Interrupt, sigTerm)
 	restartSign := make(chan os.Signal, 1)
 	sigHup := syscall.Signal(1)
@@ -72,9 +91,11 @@ func monitorMain(runtimeOptions RuntimeOptions) {
 	childEnv := childEnv()
 	first := true
 	for {
+		maybeReportPanics()
+
 		if t := time.Since(restarts[0]); t < loopThreshold {
 			l.Warnf("%d restarts in %v; not retrying further", countRestarts, t)
-			os.Exit(exitError)
+			os.Exit(syncthing.ExitError.AsInt())
 		}
 
 		copy(restarts[0:], restarts[1:])
@@ -93,10 +114,11 @@ func monitorMain(runtimeOptions RuntimeOptions) {
 			panic(err)
 		}
 
-		l.Infoln("Starting syncthing")
+		l.Debugln("Starting syncthing")
 		err = cmd.Start()
 		if err != nil {
-			panic(err)
+			l.Warnln("Error starting the main Syncthing process:", err)
+			panic("Error starting the main Syncthing process")
 		}
 
 		stdoutMut.Lock()
@@ -125,12 +147,13 @@ func monitorMain(runtimeOptions RuntimeOptions) {
 			exit <- cmd.Wait()
 		}()
 
+		stopped := false
 		select {
 		case s := <-stopSign:
 			l.Infof("Signal %d received; exiting", s)
 			cmd.Process.Signal(sigTerm)
-			<-exit
-			return
+			err = <-exit
+			stopped = true
 
 		case s := <-restartSign:
 			l.Infof("Signal %d received; restarting", s)
@@ -138,23 +161,31 @@ func monitorMain(runtimeOptions RuntimeOptions) {
 			err = <-exit
 
 		case err = <-exit:
-			if err == nil {
-				// Successful exit indicates an intentional shutdown
-				return
-			} else if exiterr, ok := err.(*exec.ExitError); ok {
-				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-					switch status.ExitStatus() {
-					case exitUpgrading:
-						// Restart the monitor process to release the .old
-						// binary as part of the upgrade process.
-						l.Infoln("Restarting monitor...")
-						if err = restartMonitor(args); err != nil {
-							l.Warnln("Restart:", err)
-						}
-						return
-					}
-				}
+		}
+
+		if err == nil {
+			// Successful exit indicates an intentional shutdown
+			os.Exit(syncthing.ExitSuccess.AsInt())
+		}
+
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			exitCode := exiterr.ExitCode()
+			if stopped || runtimeOptions.noRestart {
+				os.Exit(exitCode)
 			}
+			if exitCode == syncthing.ExitUpgrade.AsInt() {
+				// Restart the monitor process to release the .old
+				// binary as part of the upgrade process.
+				l.Infoln("Restarting monitor...")
+				if err = restartMonitor(args); err != nil {
+					l.Warnln("Restart:", err)
+				}
+				os.Exit(exitCode)
+			}
+		}
+
+		if runtimeOptions.noRestart {
+			os.Exit(syncthing.ExitError.AsInt())
 		}
 
 		l.Infoln("Syncthing exited:", err)
@@ -173,6 +204,13 @@ func copyStderr(stderr io.Reader, dst io.Writer) {
 	br := bufio.NewReader(stderr)
 
 	var panicFd *os.File
+	defer func() {
+		if panicFd != nil {
+			_ = panicFd.Close()
+			maybeReportPanics()
+		}
+	}()
+
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil {
@@ -304,6 +342,81 @@ func restartMonitorWindows(args []string) error {
 	return cmd.Start()
 }
 
+// rotatedFile keeps a set of rotating logs. There will be the base file plus up
+// to maxFiles rotated ones, each ~ maxSize bytes large.
+type rotatedFile struct {
+	name        string
+	create      createFn
+	maxSize     int64 // bytes
+	maxFiles    int
+	currentFile io.WriteCloser
+	currentSize int64
+}
+
+// the createFn should act equivalently to os.Create
+type createFn func(name string) (io.WriteCloser, error)
+
+func newRotatedFile(name string, create createFn, maxSize int64, maxFiles int) *rotatedFile {
+	return &rotatedFile{
+		name:     name,
+		create:   create,
+		maxSize:  maxSize,
+		maxFiles: maxFiles,
+	}
+}
+
+func (r *rotatedFile) Write(bs []byte) (int, error) {
+	// Check if we're about to exceed the max size, and if so close this
+	// file so we'll start on a new one.
+	if r.currentSize+int64(len(bs)) > r.maxSize {
+		r.currentFile.Close()
+		r.currentFile = nil
+		r.currentSize = 0
+	}
+
+	// If we have no current log, rotate old files out of the way and create
+	// a new one.
+	if r.currentFile == nil {
+		r.rotate()
+		fd, err := r.create(r.name)
+		if err != nil {
+			return 0, err
+		}
+		r.currentFile = fd
+	}
+
+	n, err := r.currentFile.Write(bs)
+	r.currentSize += int64(n)
+	return n, err
+}
+
+func (r *rotatedFile) rotate() {
+	// The files are named "name", "name.0", "name.1", ...
+	// "name.(r.maxFiles-1)". Increase the numbers on the
+	// suffixed ones.
+	for i := r.maxFiles - 1; i > 0; i-- {
+		from := numberedFile(r.name, i-1)
+		to := numberedFile(r.name, i)
+		err := os.Rename(from, to)
+		if err != nil && !os.IsNotExist(err) {
+			fmt.Println("LOG: Rotating logs:", err)
+		}
+	}
+
+	// Rename the base to base.0
+	err := os.Rename(r.name, numberedFile(r.name, 0))
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Println("LOG: Rotating logs:", err)
+	}
+}
+
+// numberedFile adds the number between the file name and the extension.
+func numberedFile(name string, num int) string {
+	ext := filepath.Ext(name) // contains the dot
+	withoutExt := name[:len(name)-len(ext)]
+	return fmt.Sprintf("%s.%d%s", withoutExt, num, ext)
+}
+
 // An autoclosedFile is an io.WriteCloser that opens itself for appending on
 // Write() and closes itself after an interval of no writes (closeDelay) or
 // when the file has been open for too long (maxOpenTime). A call to Write()
@@ -429,4 +542,40 @@ func childEnv() []string {
 	}
 	env = append(env, "STMONITORED=yes")
 	return env
+}
+
+// maybeReportPanics tries to figure out if crash reporting is on or off,
+// and reports any panics it can find if it's enabled. We spend at most
+// panicUploadMaxWait uploading panics...
+func maybeReportPanics() {
+	// Try to get a config to see if/where panics should be reported.
+	cfg, err := loadOrDefaultConfig(protocol.EmptyDeviceID, events.NoopLogger)
+	if err != nil {
+		l.Warnln("Couldn't load config; not reporting crash")
+		return
+	}
+
+	// Bail if we're not supposed to report panics.
+	opts := cfg.Options()
+	if !opts.CREnabled {
+		return
+	}
+
+	// Set up a timeout on the whole operation.
+	ctx, cancel := context.WithTimeout(context.Background(), panicUploadMaxWait)
+	defer cancel()
+
+	// Print a notice if the upload takes a long time.
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(panicUploadNoticeWait):
+			l.Warnln("Uploading crash reports is taking a while, please wait...")
+		}
+	}()
+
+	// Report the panics.
+	dir := locations.GetBaseDir(locations.ConfigBaseDir)
+	uploadPanicLogs(ctx, opts.CRURL, dir)
 }

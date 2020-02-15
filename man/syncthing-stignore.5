@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "SYNCTHING-STIGNORE" "5" "May 23, 2019" "v1" "Syncthing"
+.TH "SYNCTHING-STIGNORE" "5" "Feb 10, 2020" "v1" "Syncthing"
 .SH NAME
 syncthing-stignore \- Prevent files from being synchronized to other nodes
 .
@@ -43,12 +43,13 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .UNINDENT
 .SH DESCRIPTION
 .sp
-If some files should not be synchronized to other devices, a file called
+If some files should not be synchronized to (or from) other devices, a file called
 \fB\&.stignore\fP can be created containing file patterns to ignore. The
 \fB\&.stignore\fP file must be placed in the root of the folder. The
 \fB\&.stignore\fP file itself will never be synced to other devices, although it can
 \fB#include\fP files that \fIare\fP synchronized between devices. All patterns are
 relative to the folder root.
+The contents of the \fB\&.stignore\fP file must be UTF\-8 encoded.
 .sp
 \fBNOTE:\fP
 .INDENT 0.0
@@ -183,9 +184,9 @@ bar/          # synced
     baz       # synced
     quux      # ignored, matches "qu*"
     quuz      # synced, matches "qu*" but is excluded by the preceding "!quuz"
-bar2/         # ignored, matched "*2"
+bar2/         # synced, despite matching "*2" due to child frobble
     baz       # ignored, due to parent being ignored
-    frobble   # ignored, due to parent being ignored; "!frobble" doesn\(aqt help
+    frobble   # synced, due to "!frobble"
 My Pictures/  # ignored, matched case insensitive "(?i)my pictures" pattern
     Img15.PNG # ignored, due to parent being ignored
 .ft P

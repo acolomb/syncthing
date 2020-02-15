@@ -4,6 +4,7 @@ package protocol
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -74,10 +75,12 @@ func TestClose(t *testing.T) {
 		t.Error("Ping should not return true")
 	}
 
-	c0.Index("default", nil)
-	c0.Index("default", nil)
+	ctx := context.Background()
 
-	if _, err := c0.Request("default", "foo", 0, 0, nil, 0, false); err == nil {
+	c0.Index(ctx, "default", nil)
+	c0.Index(ctx, "default", nil)
+
+	if _, err := c0.Request(ctx, "default", "foo", 0, 0, nil, 0, false); err == nil {
 		t.Error("Request should return an error")
 	}
 }
@@ -86,6 +89,12 @@ func TestClose(t *testing.T) {
 // Close is called while the underlying connection is broken (send blocks).
 // https://github.com/syncthing/syncthing/pull/5442
 func TestCloseOnBlockingSend(t *testing.T) {
+	oldCloseTimeout := CloseTimeout
+	CloseTimeout = 100 * time.Millisecond
+	defer func() {
+		CloseTimeout = oldCloseTimeout
+	}()
+
 	m := newTestModel()
 
 	c := NewConnection(c0ID, &testutils.BlockingRW{}, &testutils.BlockingRW{}, m, "name", CompressAlways).(wireFormatConnection).Connection.(*rawConnection)
@@ -145,7 +154,7 @@ func TestCloseRace(t *testing.T) {
 	c0.ClusterConfig(ClusterConfig{})
 	c1.ClusterConfig(ClusterConfig{})
 
-	c1.Index("default", nil)
+	c1.Index(context.Background(), "default", nil)
 	select {
 	case <-indexReceived:
 	case <-time.After(time.Second):
@@ -188,7 +197,7 @@ func TestClusterConfigFirst(t *testing.T) {
 	c.ClusterConfig(ClusterConfig{})
 
 	done := make(chan struct{})
-	if ok := c.send(&Ping{}, done); !ok {
+	if ok := c.send(context.Background(), &Ping{}, done); !ok {
 		t.Fatal("send ping after cluster config returned false")
 	}
 	select {
@@ -211,6 +220,33 @@ func TestClusterConfigFirst(t *testing.T) {
 
 	if err := m.closedError(); err != errManual {
 		t.Fatal("Connection should be closed")
+	}
+}
+
+// TestCloseTimeout checks that calling Close times out and proceeds, if sending
+// the close message does not succeed.
+func TestCloseTimeout(t *testing.T) {
+	oldCloseTimeout := CloseTimeout
+	CloseTimeout = 100 * time.Millisecond
+	defer func() {
+		CloseTimeout = oldCloseTimeout
+	}()
+
+	m := newTestModel()
+
+	c := NewConnection(c0ID, &testutils.BlockingRW{}, &testutils.BlockingRW{}, m, "name", CompressAlways).(wireFormatConnection).Connection.(*rawConnection)
+	c.Start()
+
+	done := make(chan struct{})
+	go func() {
+		c.Close(errManual)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * CloseTimeout):
+		t.Fatal("timed out before Close returned")
 	}
 }
 
@@ -398,6 +434,38 @@ func TestLZ4Compression(t *testing.T) {
 			t.Error("Incorrect decompressed data")
 		}
 		t.Logf("OK #%d, %d -> %d -> %d", i, dataLen, len(comp), dataLen)
+	}
+}
+
+func TestStressLZ4CompressGrows(t *testing.T) {
+	c := new(rawConnection)
+	success := 0
+	for i := 0; i < 100; i++ {
+		// Create a slize that is precisely one min block size, fill it with
+		// random data. This shouldn't compress at all, so will in fact
+		// become larger when LZ4 does its thing.
+		data := make([]byte, MinBlockSize)
+		if _, err := rand.Reader.Read(data); err != nil {
+			t.Fatal("randomness failure")
+		}
+
+		comp, err := c.lz4Compress(data)
+		if err != nil {
+			t.Fatal("unexpected compression error: ", err)
+		}
+		if len(comp) < len(data) {
+			// data size should grow. We must have been really unlucky in
+			// the random generation, try again.
+			continue
+		}
+
+		// Putting it into the buffer pool shouldn't panic because the block
+		// should come from there to begin with.
+		BufferPool.Put(comp)
+		success++
+	}
+	if success == 0 {
+		t.Fatal("unable to find data that grows when compressed")
 	}
 }
 
@@ -737,10 +805,10 @@ func TestIsEquivalent(t *testing.T) {
 					continue
 				}
 
-				if res := tc.a.isEquivalent(tc.b, ignPerms, ignBlocks, tc.ignFlags); res != tc.eq {
+				if res := tc.a.isEquivalent(tc.b, 0, ignPerms, ignBlocks, tc.ignFlags); res != tc.eq {
 					t.Errorf("Case %d:\na: %v\nb: %v\na.IsEquivalent(b, %v, %v) => %v, expected %v", i, tc.a, tc.b, ignPerms, ignBlocks, res, tc.eq)
 				}
-				if res := tc.b.isEquivalent(tc.a, ignPerms, ignBlocks, tc.ignFlags); res != tc.eq {
+				if res := tc.b.isEquivalent(tc.a, 0, ignPerms, ignBlocks, tc.ignFlags); res != tc.eq {
 					t.Errorf("Case %d:\na: %v\nb: %v\nb.IsEquivalent(a, %v, %v) => %v, expected %v", i, tc.a, tc.b, ignPerms, ignBlocks, res, tc.eq)
 				}
 			}
@@ -778,5 +846,24 @@ func TestClusterConfigAfterClose(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("timed out before Cluster Config returned")
+	}
+}
+
+func TestDispatcherToCloseDeadlock(t *testing.T) {
+	// Verify that we don't deadlock when calling Close() from within one of
+	// the model callbacks (ClusterConfig).
+	m := newTestModel()
+	c := NewConnection(c0ID, &testutils.BlockingRW{}, &testutils.NoopRW{}, m, "name", CompressAlways).(wireFormatConnection).Connection.(*rawConnection)
+	m.ccFn = func(devID DeviceID, cc ClusterConfig) {
+		c.Close(errManual)
+	}
+	c.Start()
+
+	c.inbox <- &ClusterConfig{}
+
+	select {
+	case <-c.dispatcherLoopStopped:
+	case <-time.After(time.Second):
+		t.Fatal("timed out before dispatcher loop terminated")
 	}
 }

@@ -8,6 +8,7 @@ package model
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +27,8 @@ import (
 
 	"github.com/syncthing/syncthing/lib/config"
 	"github.com/syncthing/syncthing/lib/db"
+	"github.com/syncthing/syncthing/lib/db/backend"
+	"github.com/syncthing/syncthing/lib/events"
 	"github.com/syncthing/syncthing/lib/fs"
 	"github.com/syncthing/syncthing/lib/ignore"
 	"github.com/syncthing/syncthing/lib/osutil"
@@ -109,7 +112,7 @@ func createTmpWrapper(cfg config.Configuration) config.Wrapper {
 	if err != nil {
 		panic(err)
 	}
-	wrapper := config.Wrap(tmpFile.Name(), cfg)
+	wrapper := config.Wrap(tmpFile.Name(), cfg, events.NoopLogger)
 	tmpFile.Close()
 	return wrapper
 }
@@ -253,7 +256,7 @@ func BenchmarkRequestOut(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		data, err := m.requestGlobal(device1, "default", files[i%n].Name, 0, 32, nil, 0, false)
+		data, err := m.requestGlobal(context.Background(), device1, "default", files[i%n].Name, 0, 32, nil, 0, false)
 		if err != nil {
 			b.Error(err)
 		}
@@ -302,9 +305,9 @@ func TestDeviceRename(t *testing.T) {
 			DeviceID: device1,
 		},
 	}
-	cfg := config.Wrap("testdata/tmpconfig.xml", rawCfg)
+	cfg := config.Wrap("testdata/tmpconfig.xml", rawCfg, events.NoopLogger)
 
-	db := db.OpenMemory()
+	db := db.NewLowlevel(backend.OpenMemory())
 	m := newModel(cfg, myID, "syncthing", "dev", db, nil)
 
 	if cfg.Devices()[device1].Name != "" {
@@ -338,7 +341,7 @@ func TestDeviceRename(t *testing.T) {
 		t.Errorf("Device name got overwritten")
 	}
 
-	cfgw, err := config.Load("testdata/tmpconfig.xml", myID)
+	cfgw, err := config.Load("testdata/tmpconfig.xml", myID, events.NoopLogger)
 	if err != nil {
 		t.Error(err)
 		return
@@ -400,13 +403,15 @@ func TestClusterConfig(t *testing.T) {
 		},
 	}
 
-	db := db.OpenMemory()
+	db := db.NewLowlevel(backend.OpenMemory())
 
 	wrapper := createTmpWrapper(cfg)
 	m := newModel(wrapper, myID, "syncthing", "dev", db, nil)
-	m.AddFolder(cfg.Folders[0])
-	m.AddFolder(cfg.Folders[1])
 	m.ServeBackground()
+	for _, fcfg := range cfg.Folders {
+		m.removeFolder(fcfg)
+		m.addFolder(fcfg)
+	}
 	defer cleanupModel(m)
 
 	cm := m.generateClusterConfig(device2)
@@ -1453,8 +1458,8 @@ func TestIgnores(t *testing.T) {
 	m := setupModel(defaultCfgWrapper)
 	defer cleanupModel(m)
 
-	m.RemoveFolder(defaultFolderConfig)
-	m.AddFolder(defaultFolderConfig)
+	m.removeFolder(defaultFolderConfig)
+	m.addFolder(defaultFolderConfig)
 	// Reach in and update the ignore matcher to one that always does
 	// reloads when asked to, instead of checking file mtimes. This is
 	// because we will be changing the files on disk often enough that the
@@ -1462,7 +1467,7 @@ func TestIgnores(t *testing.T) {
 	m.fmut.Lock()
 	m.folderIgnores["default"] = ignore.New(defaultFs, ignore.WithCache(true), ignore.WithChangeDetector(newAlwaysChanged()))
 	m.fmut.Unlock()
-	m.StartFolder("default")
+	m.startFolder("default")
 
 	// Make sure the initial scan has finished (ScanFolders is blocking)
 	m.ScanFolders()
@@ -1485,7 +1490,7 @@ func TestIgnores(t *testing.T) {
 	}
 
 	// Invalid path, marker should be missing, hence returns an error.
-	m.AddFolder(config.FolderConfiguration{ID: "fresh", Path: "XXX"})
+	m.addFolder(config.FolderConfiguration{ID: "fresh", Path: "XXX"})
 	_, _, err = m.GetIgnores("fresh")
 	if err == nil {
 		t.Error("No error")
@@ -1495,7 +1500,7 @@ func TestIgnores(t *testing.T) {
 	pausedDefaultFolderConfig := defaultFolderConfig
 	pausedDefaultFolderConfig.Paused = true
 
-	m.RestartFolder(defaultFolderConfig, pausedDefaultFolderConfig)
+	m.restartFolder(defaultFolderConfig, pausedDefaultFolderConfig)
 	// Here folder initialization is not an issue as a paused folder isn't
 	// added to the model and thus there is no initial scan happening.
 
@@ -1509,27 +1514,69 @@ func TestIgnores(t *testing.T) {
 	changeIgnores(t, m, []string{})
 }
 
-func waitForState(t *testing.T, m *model, folder, status string) {
-	t.Helper()
-	timeout := time.Now().Add(2 * time.Second)
-	var err error
-	for !time.Now().After(timeout) {
-		_, _, err = m.State(folder)
-		if err == nil && status == "" {
-			return
-		}
-		if err != nil && err.Error() == status {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+func TestEmptyIgnores(t *testing.T) {
+	testOs := &fatalOs{t}
+
+	// Assure a clean start state
+	testOs.RemoveAll(filepath.Join("testdata", config.DefaultMarkerName))
+	testOs.MkdirAll(filepath.Join("testdata", config.DefaultMarkerName), 0644)
+
+	m := setupModel(defaultCfgWrapper)
+	defer cleanupModel(m)
+
+	m.removeFolder(defaultFolderConfig)
+	m.addFolder(defaultFolderConfig)
+
+	if err := m.SetIgnores("default", []string{}); err != nil {
+		t.Error(err)
 	}
-	t.Fatalf("Timed out waiting for status: %s, current status: %v", status, err)
+	if _, err := os.Stat("testdata/.stignore"); err == nil {
+		t.Error(".stignore was created despite being empty")
+	}
+
+	if err := m.SetIgnores("default", []string{".*", "quux"}); err != nil {
+		t.Error(err)
+	}
+	if _, err := os.Stat("testdata/.stignore"); os.IsNotExist(err) {
+		t.Error(".stignore does not exist")
+	}
+
+	if err := m.SetIgnores("default", []string{}); err != nil {
+		t.Error(err)
+	}
+	if _, err := os.Stat("testdata/.stignore"); err == nil {
+		t.Error(".stignore should have been deleted because it is empty")
+	}
+}
+
+func waitForState(t *testing.T, sub events.Subscription, folder, expected string) {
+	t.Helper()
+	timeout := time.After(5 * time.Second)
+	var error string
+	for {
+		select {
+		case ev := <-sub.C():
+			data := ev.Data.(map[string]interface{})
+			if data["folder"].(string) == folder {
+				if data["error"] == nil {
+					error = ""
+				} else {
+					error = data["error"].(string)
+				}
+				if error == expected {
+					return
+				}
+			}
+		case <-timeout:
+			t.Fatalf("Timed out waiting for status: %s, current status: %v", expected, error)
+		}
+	}
 }
 
 func TestROScanRecovery(t *testing.T) {
 	testOs := &fatalOs{t}
 
-	ldb := db.OpenMemory()
+	ldb := db.NewLowlevel(backend.OpenMemory())
 	set := db.NewFileSet("default", defaultFs, ldb)
 	set.Update(protocol.LocalDeviceID, []protocol.FileInfo{
 		{Name: "dummyfile", Version: protocol.Vector{Counters: []protocol.Counter{{ID: 42, Value: 1}}}},
@@ -1554,35 +1601,35 @@ func TestROScanRecovery(t *testing.T) {
 	testOs.RemoveAll(fcfg.Path)
 
 	m := newModel(cfg, myID, "syncthing", "dev", ldb, nil)
-	m.AddFolder(fcfg)
-	m.StartFolder("default")
+	sub := m.evLogger.Subscribe(events.StateChanged)
+	defer sub.Unsubscribe()
 	m.ServeBackground()
 	defer cleanupModel(m)
 
-	waitForState(t, m, "default", "folder path missing")
+	waitForState(t, sub, "default", "folder path missing")
 
 	testOs.Mkdir(fcfg.Path, 0700)
 
-	waitForState(t, m, "default", "folder marker missing")
+	waitForState(t, sub, "default", config.ErrMarkerMissing.Error())
 
 	fd := testOs.Create(filepath.Join(fcfg.Path, config.DefaultMarkerName))
 	fd.Close()
 
-	waitForState(t, m, "default", "")
+	waitForState(t, sub, "default", "")
 
 	testOs.Remove(filepath.Join(fcfg.Path, config.DefaultMarkerName))
 
-	waitForState(t, m, "default", "folder marker missing")
+	waitForState(t, sub, "default", config.ErrMarkerMissing.Error())
 
 	testOs.Remove(fcfg.Path)
 
-	waitForState(t, m, "default", "folder path missing")
+	waitForState(t, sub, "default", "folder path missing")
 }
 
 func TestRWScanRecovery(t *testing.T) {
 	testOs := &fatalOs{t}
 
-	ldb := db.OpenMemory()
+	ldb := db.NewLowlevel(backend.OpenMemory())
 	set := db.NewFileSet("default", defaultFs, ldb)
 	set.Update(protocol.LocalDeviceID, []protocol.FileInfo{
 		{Name: "dummyfile", Version: protocol.Vector{Counters: []protocol.Counter{{ID: 42, Value: 1}}}},
@@ -1607,36 +1654,37 @@ func TestRWScanRecovery(t *testing.T) {
 	testOs.RemoveAll(fcfg.Path)
 
 	m := newModel(cfg, myID, "syncthing", "dev", ldb, nil)
-	m.AddFolder(fcfg)
-	m.StartFolder("default")
+	sub := m.evLogger.Subscribe(events.StateChanged)
+	defer sub.Unsubscribe()
 	m.ServeBackground()
 	defer cleanupModel(m)
 
-	waitForState(t, m, "default", "folder path missing")
+	waitForState(t, sub, "default", "folder path missing")
 
 	testOs.Mkdir(fcfg.Path, 0700)
 
-	waitForState(t, m, "default", "folder marker missing")
+	waitForState(t, sub, "default", config.ErrMarkerMissing.Error())
 
 	fd := testOs.Create(filepath.Join(fcfg.Path, config.DefaultMarkerName))
 	fd.Close()
 
-	waitForState(t, m, "default", "")
+	waitForState(t, sub, "default", "")
 
 	testOs.Remove(filepath.Join(fcfg.Path, config.DefaultMarkerName))
 
-	waitForState(t, m, "default", "folder marker missing")
+	waitForState(t, sub, "default", config.ErrMarkerMissing.Error())
 
 	testOs.Remove(fcfg.Path)
 
-	waitForState(t, m, "default", "folder path missing")
+	waitForState(t, sub, "default", "folder path missing")
 }
 
 func TestGlobalDirectoryTree(t *testing.T) {
-	db := db.OpenMemory()
+	db := db.NewLowlevel(backend.OpenMemory())
 	m := newModel(defaultCfgWrapper, myID, "syncthing", "dev", db, nil)
-	m.AddFolder(defaultFolderConfig)
 	m.ServeBackground()
+	m.removeFolder(defaultFolderConfig)
+	m.addFolder(defaultFolderConfig)
 	defer cleanupModel(m)
 
 	b := func(isfile bool, path ...string) protocol.FileInfo {
@@ -1885,10 +1933,11 @@ func TestGlobalDirectoryTree(t *testing.T) {
 }
 
 func TestGlobalDirectorySelfFixing(t *testing.T) {
-	db := db.OpenMemory()
+	db := db.NewLowlevel(backend.OpenMemory())
 	m := newModel(defaultCfgWrapper, myID, "syncthing", "dev", db, nil)
-	m.AddFolder(defaultFolderConfig)
 	m.ServeBackground()
+	m.removeFolder(defaultFolderConfig)
+	m.addFolder(defaultFolderConfig)
 	defer cleanupModel(m)
 
 	b := func(isfile bool, path ...string) protocol.FileInfo {
@@ -2061,10 +2110,11 @@ func BenchmarkTree_100_10(b *testing.B) {
 }
 
 func benchmarkTree(b *testing.B, n1, n2 int) {
-	db := db.OpenMemory()
+	db := db.NewLowlevel(backend.OpenMemory())
 	m := newModel(defaultCfgWrapper, myID, "syncthing", "dev", db, nil)
-	m.AddFolder(defaultFolderConfig)
 	m.ServeBackground()
+	m.removeFolder(defaultFolderConfig)
+	m.addFolder(defaultFolderConfig)
 	defer cleanupModel(m)
 
 	m.ScanFolder("default")
@@ -2096,8 +2146,8 @@ func TestIssue3028(t *testing.T) {
 
 	// Get a count of how many files are there now
 
-	locorigfiles := m.LocalSize("default").Files
-	globorigfiles := m.GlobalSize("default").Files
+	locorigfiles := localSize(t, m, "default").Files
+	globorigfiles := globalSize(t, m, "default").Files
 
 	// Delete and rescan specifically these two
 
@@ -2108,8 +2158,8 @@ func TestIssue3028(t *testing.T) {
 	// Verify that the number of files decreased by two and the number of
 	// deleted files increases by two
 
-	loc := m.LocalSize("default")
-	glob := m.GlobalSize("default")
+	loc := localSize(t, m, "default")
+	glob := globalSize(t, m, "default")
 	if loc.Files != locorigfiles-2 {
 		t.Errorf("Incorrect local accounting; got %d current files, expected %d", loc.Files, locorigfiles-2)
 	}
@@ -2125,7 +2175,7 @@ func TestIssue3028(t *testing.T) {
 }
 
 func TestIssue4357(t *testing.T) {
-	db := db.OpenMemory()
+	db := db.NewLowlevel(backend.OpenMemory())
 	cfg := defaultCfgWrapper.RawCopy()
 	// Create a separate wrapper not to pollute other tests.
 	wrapper := createTmpWrapper(config.Configuration{})
@@ -2248,7 +2298,7 @@ func TestIssue2782(t *testing.T) {
 }
 
 func TestIndexesForUnknownDevicesDropped(t *testing.T) {
-	dbi := db.OpenMemory()
+	dbi := db.NewLowlevel(backend.OpenMemory())
 
 	files := db.NewFileSet("default", defaultFs, dbi)
 	files.Drop(device1)
@@ -2261,15 +2311,15 @@ func TestIndexesForUnknownDevicesDropped(t *testing.T) {
 	}
 
 	m := newModel(defaultCfgWrapper, myID, "syncthing", "dev", dbi, nil)
-	m.AddFolder(defaultFolderConfig)
-	m.StartFolder("default")
+	m.addFolder(defaultFolderConfig)
+	m.startFolder("default")
 	defer cleanupModel(m)
 
 	// Remote sequence is cached, hence need to recreated.
 	files = db.NewFileSet("default", defaultFs, dbi)
 
-	if len(files.ListDevices()) != 1 {
-		t.Error("Expected one device")
+	if l := len(files.ListDevices()); l != 1 {
+		t.Errorf("Expected one device got %v", l)
 	}
 }
 
@@ -2389,10 +2439,12 @@ func TestIssue3496(t *testing.T) {
 	fs := m.folderFiles["default"]
 	m.fmut.RUnlock()
 	var localFiles []protocol.FileInfo
-	fs.WithHave(protocol.LocalDeviceID, func(i db.FileIntf) bool {
+	snap := fs.Snapshot()
+	snap.WithHave(protocol.LocalDeviceID, func(i db.FileIntf) bool {
 		localFiles = append(localFiles, i.(protocol.FileInfo))
 		return true
 	})
+	snap.Release()
 
 	// Mark all files as deleted and fake it as update from device1
 
@@ -2432,7 +2484,7 @@ func TestIssue3496(t *testing.T) {
 	t.Log(comp)
 
 	// Check that NeedSize does the correct thing
-	need := m.NeedSize("default")
+	need := needSize(t, m, "default")
 	if need.Files != 1 || need.Bytes != 1234 {
 		// The one we added synthetically above
 		t.Errorf("Incorrect need size; %d, %d != 1, 1234", need.Files, need.Bytes)
@@ -2674,7 +2726,7 @@ func TestInternalScan(t *testing.T) {
 func TestCustomMarkerName(t *testing.T) {
 	testOs := &fatalOs{t}
 
-	ldb := db.OpenMemory()
+	ldb := db.NewLowlevel(backend.OpenMemory())
 	set := db.NewFileSet("default", defaultFs, ldb)
 	set.Update(protocol.LocalDeviceID, []protocol.FileInfo{
 		{Name: "dummyfile"},
@@ -2700,18 +2752,18 @@ func TestCustomMarkerName(t *testing.T) {
 	defer testOs.RemoveAll(fcfg.Path)
 
 	m := newModel(cfg, myID, "syncthing", "dev", ldb, nil)
-	m.AddFolder(fcfg)
-	m.StartFolder("default")
+	sub := m.evLogger.Subscribe(events.StateChanged)
+	defer sub.Unsubscribe()
 	m.ServeBackground()
 	defer cleanupModel(m)
 
-	waitForState(t, m, "default", "folder path missing")
+	waitForState(t, sub, "default", "folder path missing")
 
 	testOs.Mkdir(fcfg.Path, 0700)
 	fd := testOs.Create(filepath.Join(fcfg.Path, "myfile"))
 	fd.Close()
 
-	waitForState(t, m, "default", "")
+	waitForState(t, sub, "default", "")
 }
 
 func TestRemoveDirWithContent(t *testing.T) {
@@ -2852,9 +2904,10 @@ func TestVersionRestore(t *testing.T) {
 	defer cleanupModel(m)
 	m.ScanFolder("default")
 
-	sentinel, err := time.ParseInLocation(versioner.TimeFormat, "20200101-010101", locationLocal)
-	must(t, err)
-	sentinelTag := sentinel.Format(versioner.TimeFormat)
+	sentinel, err := time.ParseInLocation(versioner.TimeFormat, "20180101-010101", time.Local)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, file := range []string{
 		// Versions directory
@@ -2866,7 +2919,6 @@ func TestVersionRestore(t *testing.T) {
 		".stversions/dir/file~20171210-040406.txt",
 		".stversions/very/very/deep/one~20171210-040406.txt", // lives deep down, no directory exists.
 		".stversions/dir/existing~20171210-040406.txt",       // exists, should expect to be archived.
-		".stversions/dir/file.txt~20171210-040405",           // old tag format, supported
 		".stversions/dir/cat",                                // untagged which was used by trashcan, supported
 
 		// "file.txt" will be restored
@@ -2897,7 +2949,7 @@ func TestVersionRestore(t *testing.T) {
 		"file.txt":               1,
 		"existing":               1,
 		"something":              1,
-		"dir/file.txt":           4,
+		"dir/file.txt":           3,
 		"dir/existing.txt":       1,
 		"very/very/deep/one.txt": 1,
 		"dir/cat":                1,
@@ -2926,7 +2978,7 @@ func TestVersionRestore(t *testing.T) {
 	}
 
 	makeTime := func(s string) time.Time {
-		tm, err := time.ParseInLocation(versioner.TimeFormat, s, locationLocal)
+		tm, err := time.ParseInLocation(versioner.TimeFormat, s, time.Local)
 		if err != nil {
 			t.Error(err)
 		}
@@ -2941,6 +2993,8 @@ func TestVersionRestore(t *testing.T) {
 		"dir/existing.txt":       makeTime("20171210-040406"),
 		"very/very/deep/one.txt": makeTime("20171210-040406"),
 	}
+
+	beforeRestore := time.Now().Truncate(time.Second)
 
 	ferr, err := m.RestoreFolderVersions("default", restore)
 	must(t, err)
@@ -2960,7 +3014,7 @@ func TestVersionRestore(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			file = filepath.FromSlash(file)
 		}
-		tag := version.In(locationLocal).Truncate(time.Second).Format(versioner.TimeFormat)
+		tag := version.In(time.Local).Truncate(time.Second).Format(versioner.TimeFormat)
 		taggedName := filepath.Join(".stversions", versioner.TagFilename(file, tag))
 		fd, err := filesystem.Open(file)
 		if err != nil {
@@ -2977,51 +3031,48 @@ func TestVersionRestore(t *testing.T) {
 		}
 	}
 
-	// Simple versioner uses modtime for timestamp generation, so we can check
-	// if existing stuff was correctly archived as we restored.
+	// Simple versioner uses now for timestamp generation, so we can check
+	// if existing stuff was correctly archived as we restored (oppose to deleteD), and version time as after beforeRestore
 	expectArchived := map[string]struct{}{
 		"existing":         {},
 		"dir/file.txt":     {},
 		"dir/existing.txt": {},
 	}
 
-	// Even if they are at the archived path, content should have the non
-	// archived name.
-	for file := range expectArchived {
+	allFileVersions, err := m.GetFolderVersions("default")
+	must(t, err)
+	for file, versions := range allFileVersions {
+		key := file
 		if runtime.GOOS == "windows" {
 			file = filepath.FromSlash(file)
 		}
-		taggedName := versioner.TagFilename(file, sentinelTag)
-		taggedArchivedName := filepath.Join(".stversions", taggedName)
+		for _, version := range versions {
+			if version.VersionTime.Equal(beforeRestore) || version.VersionTime.After(beforeRestore) {
+				fd, err := filesystem.Open(".stversions/" + versioner.TagFilename(file, version.VersionTime.Format(versioner.TimeFormat)))
+				must(t, err)
+				defer fd.Close()
 
-		fd, err := filesystem.Open(taggedArchivedName)
-		must(t, err)
-		defer fd.Close()
-
-		content, err := ioutil.ReadAll(fd)
-		if err != nil {
-			t.Error(err)
-		}
-		if !bytes.Equal(content, []byte(file)) {
-			t.Errorf("%s: %s != %s", file, string(content), file)
+				content, err := ioutil.ReadAll(fd)
+				if err != nil {
+					t.Error(err)
+				}
+				// Even if they are at the archived path, content should have the non
+				// archived name.
+				if !bytes.Equal(content, []byte(file)) {
+					t.Errorf("%s (%s): %s != %s", file, fd.Name(), string(content), file)
+				}
+				_, ok := expectArchived[key]
+				if !ok {
+					t.Error("unexpected archived file with future timestamp", file, version.VersionTime)
+				}
+				delete(expectArchived, key)
+			}
 		}
 	}
 
-	// Check for other unexpected things that are tagged.
-	filesystem.Walk(".", func(path string, f fs.FileInfo, err error) error {
-		if !f.IsRegular() {
-			return nil
-		}
-		if strings.Contains(path, sentinelTag) {
-			path = osutil.NormalizedFilename(path)
-			name, _ := versioner.UntagFilename(path)
-			name = strings.TrimPrefix(name, ".stversions/")
-			if _, ok := expectArchived[name]; !ok {
-				t.Errorf("unexpected file with sentinel tag: %s", name)
-			}
-		}
-		return nil
-	})
+	if len(expectArchived) != 0 {
+		t.Fatal("missed some archived files", expectArchived)
+	}
 }
 
 func TestPausedFolders(t *testing.T) {
@@ -3052,7 +3103,7 @@ func TestPausedFolders(t *testing.T) {
 func TestIssue4094(t *testing.T) {
 	testOs := &fatalOs{t}
 
-	db := db.OpenMemory()
+	db := db.NewLowlevel(backend.OpenMemory())
 	// Create a separate wrapper not to pollute other tests.
 	wrapper := createTmpWrapper(config.Configuration{})
 	m := newModel(wrapper, myID, "syncthing", "dev", db, nil)
@@ -3088,7 +3139,7 @@ func TestIssue4094(t *testing.T) {
 func TestIssue4903(t *testing.T) {
 	testOs := &fatalOs{t}
 
-	db := db.OpenMemory()
+	db := db.NewLowlevel(backend.OpenMemory())
 	// Create a separate wrapper not to pollute other tests.
 	wrapper := createTmpWrapper(config.Configuration{})
 	m := newModel(wrapper, myID, "syncthing", "dev", db, nil)
@@ -3224,7 +3275,7 @@ func TestRequestLimit(t *testing.T) {
 	go func() {
 		second, err := m.Request(device1, "default", file, 2000, 0, nil, 0, false)
 		if err != nil {
-			t.Fatalf("Second request failed: %v", err)
+			t.Errorf("Second request failed: %v", err)
 		}
 		close(returned)
 		second.Close()
@@ -3266,6 +3317,12 @@ func TestSanitizePath(t *testing.T) {
 // on a protocol connection that has a blocking reader (blocking writer can't
 // be done as the test requires clusterconfigs to go through).
 func TestConnCloseOnRestart(t *testing.T) {
+	oldCloseTimeout := protocol.CloseTimeout
+	protocol.CloseTimeout = 100 * time.Millisecond
+	defer func() {
+		protocol.CloseTimeout = oldCloseTimeout
+	}()
+
 	w, fcfg := tmpDefaultWrapper()
 	m := setupModel(w)
 	defer cleanupModelAndRemoveDir(m, fcfg.Filesystem().URI())
@@ -3284,7 +3341,7 @@ func TestConnCloseOnRestart(t *testing.T) {
 	newFcfg.Paused = true
 	done := make(chan struct{})
 	go func() {
-		m.RestartFolder(fcfg, newFcfg)
+		m.restartFolder(fcfg, newFcfg)
 		close(done)
 	}()
 	select {
@@ -3296,5 +3353,174 @@ func TestConnCloseOnRestart(t *testing.T) {
 	case <-closed:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Timed out before connection was closed")
+	}
+}
+
+func TestModTimeWindow(t *testing.T) {
+	w, fcfg := tmpDefaultWrapper()
+	tfs := fcfg.Filesystem()
+	fcfg.RawModTimeWindowS = 2
+	w.SetFolder(fcfg)
+	m := setupModel(w)
+	defer cleanupModelAndRemoveDir(m, tfs.URI())
+
+	name := "foo"
+
+	fd, err := tfs.Create(name)
+	must(t, err)
+	stat, err := fd.Stat()
+	must(t, err)
+	modTime := stat.ModTime()
+	fd.Close()
+
+	m.ScanFolders()
+
+	v := protocol.Vector{}
+	v = v.Update(myID.Short())
+	fi, ok := m.CurrentFolderFile("default", name)
+	if !ok {
+		t.Fatal("File missing")
+	}
+	if !fi.Version.Equal(v) {
+		t.Fatalf("Got version %v, expected %v", fi.Version, v)
+	}
+
+	err = tfs.Chtimes(name, time.Now(), modTime.Add(time.Second))
+	must(t, err)
+
+	m.ScanFolders()
+
+	// No change due to window
+	fi, _ = m.CurrentFolderFile("default", name)
+	if !fi.Version.Equal(v) {
+		t.Fatalf("Got version %v, expected %v", fi.Version, v)
+	}
+
+	err = tfs.Chtimes(name, time.Now(), modTime.Add(2*time.Second))
+	must(t, err)
+
+	m.ScanFolders()
+
+	v = v.Update(myID.Short())
+	fi, _ = m.CurrentFolderFile("default", name)
+	if !fi.Version.Equal(v) {
+		t.Fatalf("Got version %v, expected %v", fi.Version, v)
+	}
+}
+
+func TestDevicePause(t *testing.T) {
+	m, _, fcfg := setupModelWithConnection()
+	defer cleanupModelAndRemoveDir(m, fcfg.Filesystem().URI())
+
+	sub := m.evLogger.Subscribe(events.DevicePaused)
+	defer sub.Unsubscribe()
+
+	m.pmut.RLock()
+	closed := m.closed[device1]
+	m.pmut.RUnlock()
+
+	dev := m.cfg.Devices()[device1]
+	dev.Paused = true
+	m.cfg.SetDevice(dev)
+
+	timeout := time.NewTimer(5 * time.Second)
+	select {
+	case <-sub.C():
+		select {
+		case <-closed:
+		case <-timeout.C:
+			t.Fatal("Timed out before connection was closed")
+		}
+	case <-timeout.C:
+		t.Fatal("Timed out before device was paused")
+	}
+}
+
+func TestDeviceWasSeen(t *testing.T) {
+	m, _, fcfg := setupModelWithConnection()
+	defer cleanupModelAndRemoveDir(m, fcfg.Filesystem().URI())
+
+	m.deviceWasSeen(device1)
+
+	stats, err := m.DeviceStatistics()
+	if err != nil {
+		t.Error("Unexpected error:", err)
+	}
+	entry := stats[device1.String()]
+	if time.Since(entry.LastSeen) > time.Second {
+		t.Error("device should have been seen now")
+	}
+}
+
+func TestNewLimitedRequestResponse(t *testing.T) {
+	l0 := newByteSemaphore(0)
+	l1 := newByteSemaphore(1024)
+	l2 := (*byteSemaphore)(nil)
+
+	// Should take 500 bytes from any non-unlimited non-nil limiters.
+	res := newLimitedRequestResponse(500, l0, l1, l2)
+
+	if l1.available != 1024-500 {
+		t.Error("should have taken bytes from limited limiter")
+	}
+
+	// Closing the result should return the bytes.
+	res.Close()
+
+	// Try to take 1024 bytes to make sure the bytes were returned.
+	done := make(chan struct{})
+	go func() {
+		l1.take(1024)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("Bytes weren't returned in a timely fashion")
+	}
+}
+
+func TestSummaryPausedNoError(t *testing.T) {
+	wcfg, fcfg := tmpDefaultWrapper()
+	fcfg.Paused = true
+	wcfg.SetFolder(fcfg)
+	m := setupModel(wcfg)
+	defer cleanupModel(m)
+
+	fss := NewFolderSummaryService(wcfg, m, myID, events.NoopLogger)
+	if _, err := fss.Summary(fcfg.ID); err != nil {
+		t.Error("Expected no error getting a summary for a paused folder:", err)
+	}
+}
+
+func TestFolderAPIErrors(t *testing.T) {
+	wcfg, fcfg := tmpDefaultWrapper()
+	fcfg.Paused = true
+	wcfg.SetFolder(fcfg)
+	m := setupModel(wcfg)
+	defer cleanupModel(m)
+
+	methods := []func(folder string) error{
+		m.ScanFolder,
+		func(folder string) error {
+			return m.ScanFolderSubdirs(folder, nil)
+		},
+		func(folder string) error {
+			_, err := m.GetFolderVersions(folder)
+			return err
+		},
+		func(folder string) error {
+			_, err := m.RestoreFolderVersions(folder, nil)
+			return err
+		},
+	}
+
+	for i, method := range methods {
+		if err := method(fcfg.ID); err != ErrFolderPaused {
+			t.Errorf(`Expected "%v", got "%v" (method no %v)`, ErrFolderPaused, err, i)
+		}
+		if err := method("notexisting"); err != errFolderMissing {
+			t.Errorf(`Expected "%v", got "%v" (method no %v)`, errFolderMissing, err, i)
+		}
 	}
 }
