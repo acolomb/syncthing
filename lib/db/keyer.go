@@ -74,6 +74,9 @@ const (
 
 	// KeyTypePendingDevice <device ID in wire format> = ObservedDevice
 	KeyTypePendingDevice byte = 17
+
+	// KeyTypeCandidateDevice <int32 folder ID> <int32 device ID> = ObservedCandidateDevice
+	KeyTypeCandidateDevice byte = 18
 )
 
 type keyer interface {
@@ -123,6 +126,10 @@ type keyer interface {
 
 	GeneratePendingDeviceKey(key, device []byte) pendingDeviceKey
 	DeviceFromPendingDeviceKey(key []byte) []byte
+
+	// Candidate devices indirectly sharing some folders
+	GenerateCandidateDeviceKey(key []byte, hash []byte) candidateDeviceKey
+	DeviceFromCandidateDeviceKey(key []byte) []byte
 }
 
 // defaultKeyer implements our key scheme. It needs folder and device
@@ -392,6 +399,19 @@ func (k defaultKeyer) GeneratePendingDeviceKey(key, device []byte) pendingDevice
 }
 
 func (k defaultKeyer) DeviceFromPendingDeviceKey(key []byte) []byte {
+	return key[keyPrefixLen:]
+}
+
+type candidateDeviceKey []byte
+
+func (k defaultKeyer) GenerateCandidateDeviceKey(key, device []byte) candidateDeviceKey {
+	key = resize(key, keyPrefixLen+len(device))
+	key[0] = KeyTypeCandidateDevice
+	copy(key[keyPrefixLen:], device)
+	return key
+}
+
+func (k defaultKeyer) DeviceFromCandidateDeviceKey(key []byte) []byte {
 	return key[keyPrefixLen:]
 }
 

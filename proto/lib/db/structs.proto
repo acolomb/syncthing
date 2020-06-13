@@ -100,3 +100,18 @@ message ObservedDevice {
     string                    name    = 2;
     string                    address = 3;
 }
+
+message Introducer {
+    google.protobuf.Timestamp time          = 1 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+    uint64                    id            = 2 [(gogoproto.customname) = "ID", (gogoproto.customtype) = "github.com/syncthing/syncthing/lib/protocol.ShortID", (gogoproto.nullable) = false];
+    string                    suggestedName = 3;
+}
+
+message ObservedCandidateDevice {
+    string              certName     = 1;
+    repeated string     addresses    = 2;
+    repeated Introducer introducedBy = 3 [(gogoproto.nullable) = false]; //FIXME removes omitempty in json tag
+    repeated string     folders      = 4;
+
+    // repeated Introducer introducedBy = 3 [(gogoproto.nullable) = false, (gogoproto.moretags) = "json:omitempty"];
+}

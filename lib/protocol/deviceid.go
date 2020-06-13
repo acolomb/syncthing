@@ -22,6 +22,8 @@ var (
 	LocalDeviceID  = repeatedDeviceID(0xff)
 	GlobalDeviceID = repeatedDeviceID(0xf8)
 	EmptyDeviceID  = DeviceID{ /* all zeroes */ }
+	TestDeviceID1  = repeatedDeviceID(0x01)
+	TestDeviceID2  = repeatedDeviceID(0x02)
 )
 
 func repeatedDeviceID(v byte) (d DeviceID) {

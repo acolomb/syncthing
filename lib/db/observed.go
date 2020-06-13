@@ -170,3 +170,47 @@ func (db *Lowlevel) PendingFoldersForDevice(device protocol.DeviceID) (map[strin
 	}
 	return res, nil
 }
+
+// Generate a map of remote devices who introduced this candidate, keyed by device ID
+func (d *ObservedCandidateDevice) Introducers() map[protocol.ShortID]Introducer {
+	introducerMap := make(map[protocol.ShortID]Introducer, len(d.IntroducedBy))
+	for _, dev := range d.IntroducedBy {
+		introducerMap[dev.ID] = dev
+	}
+	return introducerMap
+}
+
+// Add or update information from an introducer to the candidate device description
+func (d *ObservedCandidateDevice) SetIntroducer(introducer protocol.DeviceID, name string) {
+	// Sort devices who introduced this candidate into a map for deduplication
+	introducerMap := d.Introducers()
+	//FIXME convert DeviceID to ShortID
+	introducerMap[introducer.Short()] = Introducer{
+		Time:          time.Now().Round(time.Second),
+		ID:            introducer.Short(),
+		SuggestedName: name,
+	}
+	d.IntroducedBy = make([]Introducer, 0, len(introducerMap))
+	for _, n := range introducerMap {
+		d.IntroducedBy = append(d.IntroducedBy, n)
+	}
+}
+
+// Collect addresses to try for contacting a candidate device later
+func (d *ObservedCandidateDevice) CollectAddresses(addresses []string) {
+	if len(addresses) == 0 {
+		return
+	}
+	// Sort addresses into a map for deduplication
+	addressMap := make(map[string]struct{}, len(d.Addresses))
+	for _, s := range d.Addresses {
+		addressMap[s] = struct{}{}
+	}
+	for _, s := range addresses {
+		addressMap[s] = struct{}{}
+	}
+	d.Addresses = make([]string, 0, len(addressMap))
+	for a, _ := range addressMap {
+		d.Addresses = append(d.Addresses, a)
+	}
+}
