@@ -660,7 +660,7 @@ func (s *service) getCandidateDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendJSON(w, toJsonCandidateDeviceSlice(candidates))
+	sendJSON(w, candidates)
 }
 
 func (s *service) getCandidateFolders(w http.ResponseWriter, r *http.Request) {
@@ -1718,14 +1718,6 @@ func toJsonFileInfoSlice(fs []db.FileInfoTruncated) []jsonFileInfoTrunc {
 	return res
 }
 
-func toJsonCandidateDeviceSlice(devices map[protocol.DeviceID]db.ObservedCandidateDevice) []jsonCandidateDevice {
-	res := make([]jsonCandidateDevice, 0, len(devices))
-	for id, meta := range devices {
-		res = append(res, jsonCandidateDevice{id.String(), meta})
-	}
-	return res
-}
-
 // Type wrappers for nice JSON serialization
 
 type jsonFileInfo protocol.FileInfo
@@ -1775,39 +1767,6 @@ func (v jsonVersionVector) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(res)
 }
-
-type jsonCandidateDevice struct {
-	ID                         string `json:"deviceID"`
-	db.ObservedCandidateDevice        // `json:omitempty`
-}
-
-// func (d jsonCandidateDevice) MarshalJSON() ([]byte, error) {
-// 	m := candidateDeviceJSONMap(d)
-// 	m["numBlocks"] = len(f.Blocks)
-// 	return json.Marshal(m)
-// }
-
-// func candidateDeviceJSONMap(f db.FileIntf) map[string]interface{} {
-// 	out := map[string]interface{}{
-// 		"certName":          f.FileName(),
-// 		"type":          f.FileType().String(),
-// 		"size":          f.FileSize(),
-// 		"deleted":       f.IsDeleted(),
-// 		"invalid":       f.IsInvalid(),
-// 		"ignored":       f.IsIgnored(),
-// 		"mustRescan":    f.MustRescan(),
-// 		"noPermissions": !f.HasPermissionBits(),
-// 		"modified":      f.ModTime(),
-// 		"modifiedBy":    f.FileModifiedBy().String(),
-// 		"sequence":      f.SequenceNo(),
-// 		"version":       jsonVersionVector(f.FileVersion()),
-// 		"localFlags":    f.FileLocalFlags(),
-// 	}
-// 	if f.HasPermissionBits() {
-// 		out["permissions"] = fmt.Sprintf("%#o", f.FilePermissions())
-// 	}
-// 	return out
-// }
 
 func dirNames(dir string) []string {
 	fd, err := os.Open(dir)

@@ -108,7 +108,7 @@ type Model interface {
 
 	PendingDevices() (map[protocol.DeviceID]db.ObservedDevice, error)
 	PendingFolders(device protocol.DeviceID) (map[string]db.PendingFolder, error)
-	CandidateDevices(folder string) (map[protocol.DeviceID]db.ObservedCandidateDevice, error)
+	CandidateDevices(folder string) (map[protocol.DeviceID]db.CandidateDevice, error)
 	CandidateFolders(device protocol.DeviceID) []string
 
 	StartDeadlockDetector(timeout time.Duration)
@@ -2883,20 +2883,8 @@ func (m *model) PendingFolders(device protocol.DeviceID) (map[string]db.PendingF
 	return m.db.PendingFoldersForDevice(device)
 }
 
-func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.ObservedCandidateDevice, error) {
-	ocd := make(map[protocol.DeviceID]db.ObservedCandidateDevice)
-	ocd[protocol.TestDeviceID1] = db.ObservedCandidateDevice{
-		Folders: []string{"frob", "nic", "ate"},
-	}
-	ocd[protocol.TestDeviceID2] = db.ObservedCandidateDevice{
-		CertName: "foo",
-		Addresses: []string{"bar", "baz"},
-		IntroducedBy: []db.Introducer{
-			{time.Now(), protocol.LocalDeviceID.Short(), "bazoo"},
-		},
-		Folders: []string{"frob", "nic", "ate"},
-	}
-	return ocd, nil
+func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.CandidateDevice, error) {
+	return m.db.CandidateDevices(folder)
 }
 
 func (m *model) CandidateFolders(device protocol.DeviceID) []string {
