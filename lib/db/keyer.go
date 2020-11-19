@@ -75,8 +75,8 @@ const (
 	// KeyTypePendingDevice <device ID in wire format> = ObservedDevice
 	KeyTypePendingDevice byte = 17
 
-	// KeyTypeCandidateDevice <int32 folder ID> <int32 device ID> = ObservedCandidateDevice
-	KeyTypeCandidateDevice byte = 18
+	// KeyTypeCandidateLink <int32 device ID> <int32 folder ID> <device ID in wire format> = ObservedCandidateFolder
+	KeyTypeCandidateLink byte = 18
 )
 
 type keyer interface {
@@ -128,8 +128,10 @@ type keyer interface {
 	DeviceFromPendingDeviceKey(key []byte) []byte
 
 	// Candidate devices indirectly sharing some folders
-	GenerateCandidateDeviceKey(key []byte, hash []byte) candidateDeviceKey
-	DeviceFromCandidateDeviceKey(key []byte) []byte
+	GenerateCandidateLinkKey(key, introducer, folder, device []byte) (candidateLinkKey, error)
+	IntroducerFromCandidateLinkKey(key []byte) ([]byte, bool)
+	FolderFromCandidateLinkKey(key []byte) ([]byte, bool)
+	DeviceFromCandidateLinkKey(key []byte) []byte
 }
 
 // defaultKeyer implements our key scheme. It needs folder and device
@@ -402,17 +404,35 @@ func (k defaultKeyer) DeviceFromPendingDeviceKey(key []byte) []byte {
 	return key[keyPrefixLen:]
 }
 
-type candidateDeviceKey []byte
+type candidateLinkKey []byte
 
-func (k defaultKeyer) GenerateCandidateDeviceKey(key, device []byte) candidateDeviceKey {
-	key = resize(key, keyPrefixLen+len(device))
-	key[0] = KeyTypeCandidateDevice
-	copy(key[keyPrefixLen:], device)
-	return key
+func (k defaultKeyer) GenerateCandidateLinkKey(key, introducer, folder, device []byte) (candidateLinkKey, error) {
+	introducerID, err := k.deviceIdx.ID(introducer)
+	if err != nil {
+		return nil, err
+	}
+	folderID, err := k.folderIdx.ID(folder)
+	if err != nil {
+		return nil, err
+	}
+	key = resize(key, keyPrefixLen+keyDeviceLen+keyFolderLen+len(device))
+	key[0] = KeyTypeCandidateLink
+	binary.BigEndian.PutUint32(key[keyPrefixLen:], introducerID)
+	binary.BigEndian.PutUint32(key[keyPrefixLen+keyDeviceLen:], folderID)
+	copy(key[keyPrefixLen+keyDeviceLen+keyFolderLen:], device)
+	return key, nil
 }
 
-func (k defaultKeyer) DeviceFromCandidateDeviceKey(key []byte) []byte {
-	return key[keyPrefixLen:]
+func (k defaultKeyer) IntroducerFromCandidateLinkKey(key []byte) ([]byte, bool) {
+	return k.deviceIdx.Val(binary.BigEndian.Uint32(key[keyPrefixLen:]))
+}
+
+func (k defaultKeyer) FolderFromCandidateLinkKey(key []byte) ([]byte, bool) {
+	return k.folderIdx.Val(binary.BigEndian.Uint32(key[keyPrefixLen+keyDeviceLen:]))
+}
+
+func (k defaultKeyer) DeviceFromCandidateLinkKey(key []byte) []byte {
+	return key[keyPrefixLen+keyDeviceLen+keyFolderLen:]
 }
 
 // resize returns a byte slice of the specified size, reusing bs if possible
