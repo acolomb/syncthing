@@ -101,17 +101,14 @@ message ObservedDevice {
     string                    address = 3;
 }
 
-message Introducer {
-    google.protobuf.Timestamp time          = 1 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
-    uint64                    id            = 2 [(gogoproto.customname) = "ID", (gogoproto.customtype) = "github.com/syncthing/syncthing/lib/protocol.ShortID", (gogoproto.nullable) = false];
-    string                    suggestedName = 3;
+message ObservedCandidateLink {
+    google.protobuf.Timestamp time             = 1 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];  // When was the ClusterConfig received?
+    string                    introducer_label = 2;  // What label does this introducer give to the common folder? (Do we need this at all?)
+    IntroducedDeviceDetails   candidate_meta   = 3 [(gogoproto.nullable) = true];
 }
 
-message ObservedCandidateDevice {
-    string              certName     = 1;
-    repeated string     addresses    = 2;
-    repeated Introducer introducedBy = 3 [(gogoproto.nullable) = false]; //FIXME removes omitempty in json tag
-    repeated string     folders      = 4;
-
-    // repeated Introducer introducedBy = 3 [(gogoproto.nullable) = false, (gogoproto.moretags) = "json:omitempty"];
+message IntroducedDeviceDetails {
+    string          suggested_name = 1;  // By what name does this introducer know the candidate device?
+    repeated string addresses      = 2;
+    string          cert_name      = 3;
 }
