@@ -171,8 +171,121 @@ func (db *Lowlevel) PendingFoldersForDevice(device protocol.DeviceID) (map[strin
 	return res, nil
 }
 
+func (db *Lowlevel) AddOrUpdateCandidateLink(folder, label string, device, introducer protocol.DeviceID, meta *IntroducedDeviceDetails) error {
+	key, err := db.keyer.GenerateCandidateLinkKey(nil, introducer[:], []byte(folder), device[:])
+	if err != nil {
+		return err
+	}
+	link := ObservedCandidateLink{
+		//CommonFolder: ObservedFolder{
+		Time:            time.Now().Round(time.Second),
+		IntroducerLabel: label,
+		//},
+		CandidateMeta: meta,
+	}
+	bs, err := link.Marshal()
+	if err == nil {
+		err = db.Put(key, bs)
+	}
+	return err
+}
+
+// Details of a candidate device introduced through a specific folder:
+// "Introducer says FolderID exists on device CandidateID"
+type CandidateLink struct {
+	Introducer  protocol.DeviceID
+	FolderID    string
+	CandidateID protocol.DeviceID
+
+	ObservedCandidateLink //FIXME: Not needed if this granular info will only be used in cleanup!
+}
+
+func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
+	res := []CandidateLink{
+		{
+			Introducer:  protocol.TestDeviceID2,
+			FolderID:    "boggl-goggl",
+			CandidateID: protocol.TestDeviceID1,
+			ObservedCandidateLink: ObservedCandidateLink{
+				Time:            time.Now().Round(time.Second),
+				IntroducerLabel: "frob"}},
+		{
+			Introducer:  protocol.TestDeviceID2,
+			FolderID:    "sleep-wells",
+			CandidateID: protocol.TestDeviceID1,
+			ObservedCandidateLink: ObservedCandidateLink{
+				Time:            time.Now().Round(time.Second),
+				IntroducerLabel: "nic"}},
+		{
+			Introducer:  protocol.TestDeviceID2,
+			FolderID:    "damtn-omola",
+			CandidateID: protocol.TestDeviceID1,
+			ObservedCandidateLink: ObservedCandidateLink{
+				Time:            time.Now().Round(time.Second),
+				IntroducerLabel: "ate",
+				CandidateMeta: &IntroducedDeviceDetails{
+					CertName:      "foo",
+					Addresses:     []string{"bar", "baz"},
+					SuggestedName: "bazoo"},
+			},
+		},
+	}
+	return res, nil
+}
+
+// Consolidated information about a candidate device, enough to add a connection to it
+type CandidateDevice struct {
+	CertName     string                                     `json:"certName,omitempty"`
+	Addresses    []string                                   `json:"addresses,omitempty"`
+	IntroducedBy map[protocol.DeviceID]candidateAttribution `json:"introducedBy"`
+}
+
+// Details which an introducer told us about a candidate device
+type candidateAttribution struct {
+	Time          time.Time         `json:"time"`
+	CommonFolders map[string]string `json:"commonFolders"`
+	SuggestedName string            `json:"suggestedName,omitempty"`
+}
+
+func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
+	res := make(map[protocol.DeviceID]CandidateDevice)
+	res[protocol.TestDeviceID1] = CandidateDevice{
+		IntroducedBy: map[protocol.DeviceID]candidateAttribution{
+			protocol.TestDeviceID2: candidateAttribution{
+				// Should be the same for all folders, as they were all
+				// mentioned in the most recent ClusterConfig
+				Time: time.Now(),
+				CommonFolders: map[string]string{
+					"frob": "FROBBY",
+					"nic":  "NICKY",
+					"ate":  "ATEY",
+				},
+				// Only if the device ID is not known locally:
+				SuggestedName: "bazoo",
+			},
+		},
+		// Only if the device ID is not known locally:
+		CertName:  "syncthing",
+		Addresses: []string{"bar", "baz"},
+	}
+	res[protocol.TestDeviceID2] = CandidateDevice{
+		IntroducedBy: map[protocol.DeviceID]candidateAttribution{
+			protocol.TestDeviceID1: candidateAttribution{
+				Time: time.Now(),
+				CommonFolders: map[string]string{
+					"dodo": "DODODODO",
+				},
+				SuggestedName: "coolnhip",
+			},
+		},
+		CertName:  "syncthing",
+		Addresses: []string{"bar", "baz"},
+	}
+	return res, nil
+}
+
 // Collect addresses to try for contacting a candidate device later
-func (d *ObservedCandidateDevice) CollectAddresses(addresses []string) {
+func (d *IntroducedDeviceDetails) CollectAddresses(addresses []string) {
 	if len(addresses) == 0 {
 		return
 	}
