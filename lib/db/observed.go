@@ -235,13 +235,13 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 
 // Consolidated information about a candidate device, enough to add a connection to it
 type CandidateDevice struct {
-	CertName     string                                     `json:"certName,omitempty"`
-	Addresses    []string                                   `json:"addresses,omitempty"`
-	IntroducedBy map[protocol.DeviceID]candidateAttribution `json:"introducedBy"`
+	CertName     string                                           `json:"certName,omitempty"`
+	Addresses    []string                                         `json:"addresses,omitempty"`
+	IntroducedBy map[protocol.DeviceID]candidateDeviceAttribution `json:"introducedBy"`
 }
 
 // Details which an introducer told us about a candidate device
-type candidateAttribution struct {
+type candidateDeviceAttribution struct {
 	Time          time.Time         `json:"time"`
 	CommonFolders map[string]string `json:"commonFolders"`
 	SuggestedName string            `json:"suggestedName,omitempty"`
@@ -250,8 +250,8 @@ type candidateAttribution struct {
 func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
 	res := make(map[protocol.DeviceID]CandidateDevice)
 	res[protocol.TestDeviceID1] = CandidateDevice{
-		IntroducedBy: map[protocol.DeviceID]candidateAttribution{
-			protocol.TestDeviceID2: candidateAttribution{
+		IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
+			protocol.TestDeviceID2: candidateDeviceAttribution{
 				// Should be the same for all folders, as they were all
 				// mentioned in the most recent ClusterConfig
 				Time: time.Now(),
@@ -269,8 +269,8 @@ func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]Candi
 		Addresses: []string{"bar", "baz"},
 	}
 	res[protocol.TestDeviceID2] = CandidateDevice{
-		IntroducedBy: map[protocol.DeviceID]candidateAttribution{
-			protocol.TestDeviceID1: candidateAttribution{
+		IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
+			protocol.TestDeviceID1: candidateDeviceAttribution{
 				Time: time.Now(),
 				CommonFolders: map[string]string{
 					"dodo": "DODODODO",
