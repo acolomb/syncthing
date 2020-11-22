@@ -284,6 +284,36 @@ func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]Candi
 	return res, nil
 }
 
+// Consolidated information about a candidate folder
+type CandidateFolder map[protocol.DeviceID]map[protocol.DeviceID]candidateFolderAttribution
+
+// Details which an introducer told us about a candidate device
+type candidateFolderAttribution struct {
+	Time  time.Time `json:"time"`
+	Label string    `json:"label"`
+}
+
+func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
+	res := make(map[string]CandidateFolder)
+	res["frob"] = CandidateFolder{
+		protocol.TestDeviceID1: map[protocol.DeviceID]candidateFolderAttribution{
+			protocol.TestDeviceID2: candidateFolderAttribution{
+				Time: time.Now(),
+				Label: "FROBBY",
+			},
+		},
+	}
+	res["dodo"] = CandidateFolder{
+		protocol.TestDeviceID2: map[protocol.DeviceID]candidateFolderAttribution{
+			protocol.TestDeviceID1: candidateFolderAttribution{
+				Time: time.Now(),
+				Label: "DODODODO",
+			},
+		},
+	}
+	return res, nil
+}
+
 // Collect addresses to try for contacting a candidate device later
 func (d *IntroducedDeviceDetails) CollectAddresses(addresses []string) {
 	if len(addresses) == 0 {

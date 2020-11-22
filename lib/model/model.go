@@ -109,7 +109,7 @@ type Model interface {
 	PendingDevices() (map[protocol.DeviceID]db.ObservedDevice, error)
 	PendingFolders(device protocol.DeviceID) (map[string]db.PendingFolder, error)
 	CandidateDevices(folder string) (map[protocol.DeviceID]db.CandidateDevice, error)
-	CandidateFolders(device protocol.DeviceID) []string
+	CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error)
 
 	StartDeadlockDetector(timeout time.Duration)
 	GlobalDirectoryTree(folder, prefix string, levels int, dirsonly bool) map[string]interface{}
@@ -2887,8 +2887,8 @@ func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.Candid
 	return m.db.CandidateDevices(folder)
 }
 
-func (m *model) CandidateFolders(device protocol.DeviceID) []string {
-	return nil
+func (m *model) CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error) {
+	return m.db.CandidateFolders()
 }
 
 // mapFolders returns a map of folder ID to folder configuration for the given

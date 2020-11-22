@@ -668,11 +668,11 @@ func (s *service) getCandidateFolders(w http.ResponseWriter, r *http.Request) {
 
 	device := qs.Get("device")
 	deviceID, err := protocol.DeviceIDFromString(device)
-	if err != nil || len(device) == 0 {
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	folders := s.model.CandidateFolders(deviceID)
+	folders, err := s.model.CandidateFolders(deviceID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
