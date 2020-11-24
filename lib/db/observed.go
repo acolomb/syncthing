@@ -267,6 +267,11 @@ func (db *Lowlevel) CandidateLinksDummyData() {
 	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pictures from Joe", dev2, dev3, nil))
 }
 
+func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
+	//FIXME not implemented
+	return nil, nil
+}
+
 // Consolidated information about a candidate device, enough to add a connection to it
 type CandidateDevice struct {
 	CertName     string                                           `json:"certName,omitempty"`
@@ -318,6 +323,86 @@ func (db *Lowlevel) CandidateDevicesDummy(folder string) (map[protocol.DeviceID]
 	return res, nil
 }
 
+func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
+	//db.CandidateLinksDummyData()
+
+	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Release()
+	res := make(map[protocol.DeviceID]CandidateDevice)
+	for iter.Next() {
+		var ocl ObservedCandidateLink
+		var candidateID, introducerID protocol.DeviceID
+		var folderID string
+		var bs []byte
+		var cd CandidateDevice
+		keyDev, ok := db.keyer.IntroducerFromCandidateLinkKey(iter.Key())
+		introducerID, err := protocol.DeviceIDFromBytes(keyDev)
+		if !ok || err != nil {
+			//FIXME l.Infoln("introducer ID", ok, err)
+			goto deleteKey
+		}
+		if keyFolder, ok := db.keyer.FolderFromCandidateLinkKey(iter.Key()); !ok || len(keyFolder) < 1 {
+			//FIXME l.Infoln("folder ID", ok, keyFolder)
+			goto deleteKey
+		} else {
+			folderID = string(keyFolder)
+		}
+		keyDev = db.keyer.DeviceFromCandidateLinkKey(iter.Key())
+		candidateID, err = protocol.DeviceIDFromBytes(keyDev)
+		if err != nil {
+			//FIXME l.Infoln("candidateID ID", err)
+			goto deleteKey
+		}
+		if bs, err = db.Get(iter.Key()); err != nil {
+			//FIXME l.Infoln("DB Get", err)
+			goto deleteKey
+		}
+		if err = ocl.Unmarshal(bs); err != nil {
+			//FIXME l.Infoln("Unmarshal", err)
+			goto deleteKey
+		}
+		if cd, ok = res[candidateID]; !ok {
+			cd = CandidateDevice{
+				Addresses:    []string{},
+				IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{},
+			}
+		}
+		cd.mergeCandidateLink(ocl, folderID, introducerID)
+		res[candidateID] = cd
+		continue
+	deleteKey:
+		l.Infof("Invalid candidate link entry, deleting from database: %x", iter.Key())
+		if err := db.Delete(iter.Key()); err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (cd *CandidateDevice) mergeCandidateLink(observed ObservedCandidateLink, folder string, introducer protocol.DeviceID) {
+	attrib, ok := cd.IntroducedBy[introducer]
+	if !ok {
+		attrib = candidateDeviceAttribution{
+			CommonFolders: map[string]string{},
+		}
+	}
+	attrib.Time = observed.Time
+	attrib.CommonFolders[folder] = observed.IntroducerLabel
+	if observed.CandidateMeta != nil {
+		if cd.CertName != observed.CandidateMeta.CertName {
+			//FIXME warn?
+			cd.CertName = observed.CandidateMeta.CertName
+		}
+		cd.collectAddresses(observed.CandidateMeta.Addresses)
+		// Only if the device ID is not known locally:
+		attrib.SuggestedName = observed.CandidateMeta.SuggestedName
+	}
+	cd.IntroducedBy[introducer] = attrib
+}
+
 // Collect addresses to try for contacting a candidate device later
 func (d *CandidateDevice) collectAddresses(addresses []string) {
 	if len(addresses) == 0 {
@@ -365,4 +450,8 @@ func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) 
 		},
 	}
 	return res, nil
+}
+
+func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
+	return nil, nil
 }
