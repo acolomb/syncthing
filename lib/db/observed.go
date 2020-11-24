@@ -177,11 +177,9 @@ func (db *Lowlevel) AddOrUpdateCandidateLink(folder, label string, device, intro
 		return err
 	}
 	link := ObservedCandidateLink{
-		//CommonFolder: ObservedFolder{
 		Time:            time.Now().Round(time.Second),
 		IntroducerLabel: label,
-		//},
-		CandidateMeta: meta,
+		CandidateMeta:   meta,
 	}
 	bs, err := link.Marshal()
 	if err == nil {
@@ -298,7 +296,7 @@ func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
 	res["frob"] = CandidateFolder{
 		protocol.TestDeviceID1: map[protocol.DeviceID]candidateFolderAttribution{
 			protocol.TestDeviceID2: candidateFolderAttribution{
-				Time: time.Now(),
+				Time:  time.Now(),
 				Label: "FROBBY",
 			},
 		},
@@ -306,7 +304,7 @@ func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
 	res["dodo"] = CandidateFolder{
 		protocol.TestDeviceID2: map[protocol.DeviceID]candidateFolderAttribution{
 			protocol.TestDeviceID1: candidateFolderAttribution{
-				Time: time.Now(),
+				Time:  time.Now(),
 				Label: "DODODODO",
 			},
 		},
