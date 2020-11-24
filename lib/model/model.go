@@ -1197,7 +1197,7 @@ func (m *model) ClusterConfig(deviceID protocol.DeviceID, cm protocol.ClusterCon
 				info.local = dev
 			} else if dev.ID == deviceID {
 				info.remote = dev
-			} else if knownDev, ok := m.cfg.Devices()[dev.ID]; ok {
+			} else if knownDev, ok := m.cfg.Device(dev.ID); ok {
 				// This device is known to us and shares this folder, but not
 				// directly with us. Remember it in order to possibly present a
 				// list of suggested devices for additional cluster
