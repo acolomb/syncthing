@@ -318,6 +318,25 @@ func (db *Lowlevel) CandidateDevicesDummy(folder string) (map[protocol.DeviceID]
 	return res, nil
 }
 
+// Collect addresses to try for contacting a candidate device later
+func (d *CandidateDevice) collectAddresses(addresses []string) {
+	if len(addresses) == 0 {
+		return
+	}
+	// Sort addresses into a map for deduplication
+	addressMap := make(map[string]struct{}, len(d.Addresses))
+	for _, s := range d.Addresses {
+		addressMap[s] = struct{}{}
+	}
+	for _, s := range addresses {
+		addressMap[s] = struct{}{}
+	}
+	d.Addresses = make([]string, 0, len(addressMap))
+	for a, _ := range addressMap {
+		d.Addresses = append(d.Addresses, a)
+	}
+}
+
 // Consolidated information about a candidate folder
 type CandidateFolder map[protocol.DeviceID]map[protocol.DeviceID]candidateFolderAttribution
 
@@ -346,23 +365,4 @@ func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) 
 		},
 	}
 	return res, nil
-}
-
-// Collect addresses to try for contacting a candidate device later
-func (d *IntroducedDeviceDetails) CollectAddresses(addresses []string) {
-	if len(addresses) == 0 {
-		return
-	}
-	// Sort addresses into a map for deduplication
-	addressMap := make(map[string]struct{}, len(d.Addresses))
-	for _, s := range d.Addresses {
-		addressMap[s] = struct{}{}
-	}
-	for _, s := range addresses {
-		addressMap[s] = struct{}{}
-	}
-	d.Addresses = make([]string, 0, len(addressMap))
-	for a, _ := range addressMap {
-		d.Addresses = append(d.Addresses, a)
-	}
 }
