@@ -1173,6 +1173,8 @@ func (m *model) ClusterConfig(deviceID protocol.DeviceID, cm protocol.ClusterCon
 	// for folders that we don't expect (unknown or not shared).
 	// Also, collect a list of folders we do share, and if he's interested in
 	// temporary indexes, subscribe the connection.
+	// Collect candidate devices that we have an indirect connection to
+	// because they have the same folder, but do not share it with us.
 
 	m.pmut.RLock()
 	indexSenderRegistry, ok := m.indexSenders[deviceID]
@@ -1206,6 +1208,9 @@ func (m *model) ClusterConfig(deviceID protocol.DeviceID, cm protocol.ClusterCon
 				//FIXME "category 2" devices, as per https://forum.syncthing.net/t/12212
 				l.Infof("Known device %v (%s) is not directly sharing common folder %s",
 					dev.ID, knownDev.Name, folder.Description())
+				// Record as a candidate device, leaving out any details about
+				// it which we already know from our configuration entry.
+				m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, deviceID, nil)
 			} else {
 				// There is another device sharing this folder that we haven't
 				// heard of yet. Remember it in order to possibly present a list
@@ -1214,6 +1219,14 @@ func (m *model) ClusterConfig(deviceID protocol.DeviceID, cm protocol.ClusterCon
 				//FIXME "category 4" devices, as per https://forum.syncthing.net/t/12212
 				l.Infof("Unknown device %v (%s) is a candidate for indirectly shared folder %s",
 					dev.ID, dev.Name, folder.Description())
+				// Record as a new candidate device, remembering all the details
+				// received from our known peer.
+				m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, deviceID,
+					&db.IntroducedDeviceDetails{
+						CertName:      dev.CertName,
+						Addresses:     dev.Addresses,
+						SuggestedName: dev.Name,
+					})
 			}
 			if info.local.ID != protocol.EmptyDeviceID && info.remote.ID != protocol.EmptyDeviceID {
 				break
@@ -1317,6 +1330,8 @@ func (m *model) ccHandleFolders(folders []protocol.Folder, deviceCfg config.Devi
 		}
 		if !ok {
 			indexSenders.remove(folder.ID)
+			// This folder is already offered to us from the remote device,
+			// suggest it to the user for approval unless previously ignored.
 			if deviceCfg.IgnoredFolder(folder.ID) {
 				l.Infof("Ignoring folder %s from device %s since we are configured to", folder.Description(), deviceID)
 				continue
@@ -1331,6 +1346,7 @@ func (m *model) ccHandleFolders(folders []protocol.Folder, deviceCfg config.Devi
 				"device":      deviceID.String(),
 			})
 			l.Infof("Unexpected folder %s sent from device %q; ensure that the folder exists and that this device is selected under \"Share With\" in the folder configuration.", folder.Description(), deviceID)
+			//FIXME should still collect candidate device entries below
 			continue
 		}
 
@@ -1342,6 +1358,7 @@ func (m *model) ccHandleFolders(folders []protocol.Folder, deviceCfg config.Devi
 
 		if cfg.Paused {
 			indexSenders.addPending(cfg, ccDeviceInfos[folder.ID])
+			//FIXME should still parse the message and collect suggested device links?
 			continue
 		}
 
