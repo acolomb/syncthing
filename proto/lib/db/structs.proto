@@ -108,7 +108,7 @@ message ObservedCandidateLink {
 }
 
 message IntroducedDeviceDetails {
-    string          suggested_name = 1;  // By what name does this introducer know the candidate device?
-    repeated string addresses      = 2;
-    string          cert_name      = 3;
+    string          cert_name      = 1;
+    string          suggested_name = 2;  // By what name does this introducer know the candidate device?
+    repeated string addresses      = 3;
 }
