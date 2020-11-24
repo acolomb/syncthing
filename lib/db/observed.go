@@ -231,6 +231,42 @@ func (db *Lowlevel) CandidateLinksDummy() ([]CandidateLink, error) {
 	return res, nil
 }
 
+func (db *Lowlevel) CandidateLinksDummyData() {
+	dev1, _ := protocol.DeviceIDFromString("P56IOI7-MZJNU2Y-IQGDREY-DM2MGTI-MGL3BXN-PQ6W5BM-TBBZ4TJ-XZWICQ2")
+	dev2, _ := protocol.DeviceIDFromString("DOVII4U-SQEEESM-VZ2CVTC-CJM4YN5-QNV7DCU-5U3ASRL-YVFG6TH-W5DV5AA")
+	dev3, _ := protocol.DeviceIDFromString("YZJBJFX-RDBL7WY-6ZGKJ2D-4MJB4E7-ZATSDUY-LD6Y3L3-MLFUYWE-AEMXJAC")
+	dev4, _ := protocol.DeviceIDFromString("UYGDMA4-TPHOFO5-2VQYDCC-7CWX7XW-INZINQT-LE4B42N-4JUZTSM-IWCSXA4")
+	dev5, _ := protocol.DeviceIDFromString("AIBAEAQ-CAIBAEC-AQCAIBA-EAQCAIA-BAEAQCA-IBAEAQC-CAIBAEA-QCAIBA7")
+
+	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pics from Jane", dev1, dev2,
+		&IntroducedDeviceDetails{
+			CertName: "",
+			Addresses: []string{
+				"192.168.1.2:22000",
+				"[2a02:8070:::ff34:1234::aabb]:22000",
+			},
+			SuggestedName: "Jane",
+		}))
+
+	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pics of J & J", dev1, dev3,
+		&IntroducedDeviceDetails{
+			CertName: "",
+			Addresses: []string{
+				"192.168.1.2:22000",
+				"[2a02:8070:::ff34:1234::aabb]:22000",
+			},
+			SuggestedName: "Jane's Laptop",
+		}))
+
+	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Family pics", dev4, dev3, nil))
+
+	l.Warnln(db.AddOrUpdateCandidateLink("abcde-fghij", "Mighty nice folder", dev4, dev3, nil))
+
+	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Family pics", dev4, dev5, nil))
+
+	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pictures from Joe", dev2, dev3, nil))
+}
+
 // Consolidated information about a candidate device, enough to add a connection to it
 type CandidateDevice struct {
 	CertName     string                                           `json:"certName,omitempty"`
