@@ -198,7 +198,7 @@ type CandidateLink struct {
 	ObservedCandidateLink //FIXME: Not needed if this granular info will only be used in cleanup!
 }
 
-func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
+func (db *Lowlevel) CandidateLinksDummy() ([]CandidateLink, error) {
 	res := []CandidateLink{
 		{
 			Introducer:  protocol.TestDeviceID2,
@@ -245,7 +245,7 @@ type candidateDeviceAttribution struct {
 	SuggestedName string            `json:"suggestedName,omitempty"`
 }
 
-func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
+func (db *Lowlevel) CandidateDevicesDummy(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
 	res := make(map[protocol.DeviceID]CandidateDevice)
 	res[protocol.TestDeviceID1] = CandidateDevice{
 		IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
@@ -291,7 +291,7 @@ type candidateFolderAttribution struct {
 	Label string    `json:"label"`
 }
 
-func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
+func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) {
 	res := make(map[string]CandidateFolder)
 	res["frob"] = CandidateFolder{
 		protocol.TestDeviceID1: map[protocol.DeviceID]candidateFolderAttribution{

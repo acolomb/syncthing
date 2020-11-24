@@ -2884,11 +2884,11 @@ func (m *model) PendingFolders(device protocol.DeviceID) (map[string]db.PendingF
 }
 
 func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.CandidateDevice, error) {
-	return m.db.CandidateDevices(folder)
+	return m.db.CandidateDevicesDummy(folder)
 }
 
 func (m *model) CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error) {
-	return m.db.CandidateFolders()
+	return m.db.CandidateFoldersDummy()
 }
 
 // mapFolders returns a map of folder ID to folder configuration for the given
