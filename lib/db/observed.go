@@ -335,17 +335,17 @@ func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]Candi
 	for iter.Next() {
 		var ocl ObservedCandidateLink
 		var candidateID, introducerID protocol.DeviceID
-		var folderID string
+		var folderID, deleteCause string
 		var bs []byte
 		var cd CandidateDevice
 		keyDev, ok := db.keyer.IntroducerFromCandidateLinkKey(iter.Key())
 		introducerID, err := protocol.DeviceIDFromBytes(keyDev)
 		if !ok || err != nil {
-			//FIXME l.Infoln("introducer ID", ok, err)
+			deleteCause = "invalid introducer device ID"
 			goto deleteKey
 		}
 		if keyFolder, ok := db.keyer.FolderFromCandidateLinkKey(iter.Key()); !ok || len(keyFolder) < 1 {
-			//FIXME l.Infoln("folder ID", ok, keyFolder)
+			deleteCause = "invalid folder ID"
 			goto deleteKey
 		} else {
 			folderID = string(keyFolder)
@@ -353,15 +353,15 @@ func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]Candi
 		keyDev = db.keyer.DeviceFromCandidateLinkKey(iter.Key())
 		candidateID, err = protocol.DeviceIDFromBytes(keyDev)
 		if err != nil {
-			//FIXME l.Infoln("candidateID ID", err)
+			deleteCause = "invalid candidateID device ID"
 			goto deleteKey
 		}
 		if bs, err = db.Get(iter.Key()); err != nil {
-			//FIXME l.Infoln("DB Get", err)
+			deleteCause = "DB Get failed"
 			goto deleteKey
 		}
 		if err = ocl.Unmarshal(bs); err != nil {
-			//FIXME l.Infoln("Unmarshal", err)
+			deleteCause = "DB Unmarshal failed"
 			goto deleteKey
 		}
 		if cd, ok = res[candidateID]; !ok {
@@ -374,7 +374,8 @@ func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]Candi
 		res[candidateID] = cd
 		continue
 	deleteKey:
-		l.Infof("Invalid candidate link entry, deleting from database: %x", iter.Key())
+		l.Infof("Invalid candidate link entry (%v / %v), deleting from database: %x",
+			deleteCause, err, iter.Key())
 		if err := db.Delete(iter.Key()); err != nil {
 			return nil, err
 		}

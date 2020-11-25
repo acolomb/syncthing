@@ -1414,8 +1414,8 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 			// list of suggested devices for additional cluster connectivity.
 
 			//FIXME "category 2" devices, as per https://forum.syncthing.net/t/12212
-			l.Infof("Known device %v (%s) is not directly sharing common folder %s",
-				dev.ID, knownDev.Name, folder.Description())
+			l.Infof("Known device %v (%s) is not directly sharing common folder %s, marking as candidate",
+				dev.ID, knownDev.Name, folder.ID)
 			// Record as a candidate device, leaving out any details about it
 			// which we already know from our configuration entry.
 		} else {
@@ -1425,7 +1425,7 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 
 			//FIXME "category 4" devices, as per https://forum.syncthing.net/t/12212
 			l.Infof("Unknown device %v (%s) is a candidate for indirectly shared folder %s",
-				dev.ID, dev.Name, folder.Description())
+				dev.ID, dev.Name, folder.ID)
 			// Record as a new candidate device, remembering all the details
 			// received from our known peer.
 			meta = &db.IntroducedDeviceDetails{
