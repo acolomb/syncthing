@@ -1199,34 +1199,6 @@ func (m *model) ClusterConfig(deviceID protocol.DeviceID, cm protocol.ClusterCon
 				info.local = dev
 			} else if dev.ID == deviceID {
 				info.remote = dev
-			} else if knownDev, ok := m.cfg.Device(dev.ID); ok {
-				// This device is known to us and shares this folder, but not
-				// directly with us. Remember it in order to possibly present a
-				// list of suggested devices for additional cluster
-				// connectivity.
-
-				//FIXME "category 2" devices, as per https://forum.syncthing.net/t/12212
-				l.Infof("Known device %v (%s) is not directly sharing common folder %s",
-					dev.ID, knownDev.Name, folder.Description())
-				// Record as a candidate device, leaving out any details about
-				// it which we already know from our configuration entry.
-				m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, deviceID, nil)
-			} else {
-				// There is another device sharing this folder that we haven't
-				// heard of yet. Remember it in order to possibly present a list
-				// of suggested devices for additional cluster connectivity.
-
-				//FIXME "category 4" devices, as per https://forum.syncthing.net/t/12212
-				l.Infof("Unknown device %v (%s) is a candidate for indirectly shared folder %s",
-					dev.ID, dev.Name, folder.Description())
-				// Record as a new candidate device, remembering all the details
-				// received from our known peer.
-				m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, deviceID,
-					&db.IntroducedDeviceDetails{
-						CertName:      dev.CertName,
-						Addresses:     dev.Addresses,
-						SuggestedName: dev.Name,
-					})
 			}
 			if info.local.ID != protocol.EmptyDeviceID && info.remote.ID != protocol.EmptyDeviceID {
 				break
@@ -1326,6 +1298,9 @@ func (m *model) ccHandleFolders(folders []protocol.Folder, deviceCfg config.Devi
 
 		cfg, ok := m.cfg.Folder(folder.ID)
 		if ok {
+			if err := m.ccHandleFolderCandidates(folder, deviceID, cfg); err != nil {
+				//FIXME
+			}
 			folderDevice, ok = cfg.Device(deviceID)
 		}
 		if !ok {
@@ -1418,6 +1393,50 @@ func (m *model) ccHandleFolders(folders []protocol.Folder, deviceCfg config.Devi
 	indexSenders.removeAllExcept(seenFolders)
 
 	return tempIndexFolders, paused, nil
+}
+
+func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer protocol.DeviceID, fcfg config.FolderConfiguration) error {
+	// Note this is called only for folders we already share with the remote FIXME
+	for _, dev := range folder.Devices {
+		if dev.ID == m.id || dev.ID == introducer {
+			// This is the other side's description of themselves, or of what
+			// it knows about us.
+			continue
+		}
+		if _, ok := fcfg.Device(dev.ID); ok {
+			// Local folder is already shared with this device.
+			continue
+		}
+		var meta *db.IntroducedDeviceDetails
+		if knownDev, ok := m.cfg.Device(dev.ID); ok {
+			// This device is known to us and shares this folder, but not
+			// directly with us. Remember it in order to possibly present a
+			// list of suggested devices for additional cluster connectivity.
+
+			//FIXME "category 2" devices, as per https://forum.syncthing.net/t/12212
+			l.Infof("Known device %v (%s) is not directly sharing common folder %s",
+				dev.ID, knownDev.Name, folder.Description())
+			// Record as a candidate device, leaving out any details about it
+			// which we already know from our configuration entry.
+		} else {
+			// There is another device sharing this folder that we haven't
+			// heard of yet. Remember it in order to possibly present a list
+			// of suggested devices for additional cluster connectivity.
+
+			//FIXME "category 4" devices, as per https://forum.syncthing.net/t/12212
+			l.Infof("Unknown device %v (%s) is a candidate for indirectly shared folder %s",
+				dev.ID, dev.Name, folder.Description())
+			// Record as a new candidate device, remembering all the details
+			// received from our known peer.
+			meta = &db.IntroducedDeviceDetails{
+				CertName:      dev.CertName,
+				Addresses:     dev.Addresses,
+				SuggestedName: dev.Name,
+			}
+		}
+		m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, introducer, meta)
+	}
+	return nil //FIXME accumulate errors? abort on first?
 }
 
 func (m *model) ccCheckEncryption(fcfg config.FolderConfiguration, folderDevice config.FolderDeviceConfiguration, ccDeviceInfos *indexSenderStartInfo, deviceUntrusted bool) error {
