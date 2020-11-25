@@ -1434,7 +1434,9 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 				SuggestedName: dev.Name,
 			}
 		}
-		m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, introducer, meta)
+		if err := m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, introducer, meta); err != nil {
+			l.Warnf("Failed to persist candidate link entry to database: %v", err)
+		}
 	}
 	return nil //FIXME accumulate errors? abort on first?
 }
