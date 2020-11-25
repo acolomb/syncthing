@@ -9,6 +9,7 @@ package db
 import (
 	"time"
 
+	"github.com/syncthing/syncthing/lib/db/backend"
 	"github.com/syncthing/syncthing/lib/protocol"
 )
 
@@ -272,6 +273,44 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 	return nil, nil
 }
 
+func (db *Lowlevel) readCandidateLink(iter backend.Iterator) (ocl ObservedCandidateLink, candidateID, introducerID protocol.DeviceID, folderID string, err error) {
+	var deleteCause string
+	var bs []byte
+	keyDev, ok := db.keyer.IntroducerFromCandidateLinkKey(iter.Key())
+	introducerID, err = protocol.DeviceIDFromBytes(keyDev)
+	if !ok || err != nil {
+		deleteCause = "invalid introducer device ID"
+		goto deleteKey
+	}
+	if keyFolder, ok := db.keyer.FolderFromCandidateLinkKey(iter.Key()); !ok || len(keyFolder) < 1 {
+		deleteCause = "invalid folder ID"
+		goto deleteKey
+	} else {
+		folderID = string(keyFolder)
+	}
+	keyDev = db.keyer.DeviceFromCandidateLinkKey(iter.Key())
+	candidateID, err = protocol.DeviceIDFromBytes(keyDev)
+	if err != nil {
+		deleteCause = "invalid candidate device ID"
+		goto deleteKey
+	}
+	if bs, err = db.Get(iter.Key()); err != nil {
+		deleteCause = "DB Get failed"
+		goto deleteKey
+	}
+	if err = ocl.Unmarshal(bs); err != nil {
+		deleteCause = "DB Unmarshal failed"
+		goto deleteKey
+	}
+	return
+
+deleteKey:
+	l.Infof("Invalid candidate link entry (%v / %v), deleting from database: %x",
+		deleteCause, err, iter.Key())
+	err = db.Delete(iter.Key())
+	return
+}
+
 // Consolidated information about a candidate device, enough to add a connection to it
 type CandidateDevice struct {
 	CertName     string                                           `json:"certName,omitempty"`
@@ -333,38 +372,12 @@ func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]Candi
 	defer iter.Release()
 	res := make(map[protocol.DeviceID]CandidateDevice)
 	for iter.Next() {
-		var ocl ObservedCandidateLink
-		var candidateID, introducerID protocol.DeviceID
-		var folderID, deleteCause string
-		var bs []byte
-		var cd CandidateDevice
-		keyDev, ok := db.keyer.IntroducerFromCandidateLinkKey(iter.Key())
-		introducerID, err := protocol.DeviceIDFromBytes(keyDev)
-		if !ok || err != nil {
-			deleteCause = "invalid introducer device ID"
-			goto deleteKey
-		}
-		if keyFolder, ok := db.keyer.FolderFromCandidateLinkKey(iter.Key()); !ok || len(keyFolder) < 1 {
-			deleteCause = "invalid folder ID"
-			goto deleteKey
-		} else {
-			folderID = string(keyFolder)
-		}
-		keyDev = db.keyer.DeviceFromCandidateLinkKey(iter.Key())
-		candidateID, err = protocol.DeviceIDFromBytes(keyDev)
+		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
 		if err != nil {
-			deleteCause = "invalid candidateID device ID"
-			goto deleteKey
+			return nil, err
 		}
-		if bs, err = db.Get(iter.Key()); err != nil {
-			deleteCause = "DB Get failed"
-			goto deleteKey
-		}
-		if err = ocl.Unmarshal(bs); err != nil {
-			deleteCause = "DB Unmarshal failed"
-			goto deleteKey
-		}
-		if cd, ok = res[candidateID]; !ok {
+		cd, ok := res[candidateID]
+		if !ok {
 			cd = CandidateDevice{
 				Addresses:    []string{},
 				IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{},
@@ -372,13 +385,6 @@ func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]Candi
 		}
 		cd.mergeCandidateLink(ocl, folderID, introducerID)
 		res[candidateID] = cd
-		continue
-	deleteKey:
-		l.Infof("Invalid candidate link entry (%v / %v), deleting from database: %x",
-			deleteCause, err, iter.Key())
-		if err := db.Delete(iter.Key()); err != nil {
-			return nil, err
-		}
 	}
 	return res, nil
 }
