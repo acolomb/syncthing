@@ -2975,8 +2975,30 @@ func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.Candid
 	return candidates, nil
 }
 
+// CandidateFolders lists devices that already have an indirect link over one or more
+// folders, through the introducing third parties.  For each candidate, the suggestion is
+// attributed to one or more introducing device IDs.  It returns the entries grouped by
+// common folder ID and filters for a given candidate device unless the argument is
+// specified as EmptyDeviceID.
 func (m *model) CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error) {
-	return m.db.CandidateFolders()
+	folders, err := m.db.CandidateFolders()
+	if err != nil {
+		return nil, err
+	}
+	if device != protocol.EmptyDeviceID {
+		for folderID, candidates := range folders {
+			if introducers, ok := candidates[device]; !ok {
+				// Filter out folders where the given given device is no candidate
+				delete(folders, folderID)
+			} else {
+				// List only the requested candidate device
+				folders[folderID] = db.CandidateFolder{
+					device: introducers,
+				}
+			}
+		}
+	}
+	return folders, nil
 }
 
 // mapFolders returns a map of folder ID to folder configuration for the given
