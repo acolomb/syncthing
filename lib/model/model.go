@@ -2939,7 +2939,7 @@ func (m *model) PendingFolders(device protocol.DeviceID) (map[string]db.PendingF
 }
 
 func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.CandidateDevice, error) {
-	return m.db.CandidateDevices(folder)
+	return m.db.CandidateDevices()
 }
 
 func (m *model) CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error) {

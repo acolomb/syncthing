@@ -325,7 +325,7 @@ type candidateDeviceAttribution struct {
 	SuggestedName string            `json:"suggestedName,omitempty"`
 }
 
-func (db *Lowlevel) CandidateDevicesDummy(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
+func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevice, error) {
 	res := make(map[protocol.DeviceID]CandidateDevice)
 	res[protocol.TestDeviceID1] = CandidateDevice{
 		IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
@@ -362,7 +362,7 @@ func (db *Lowlevel) CandidateDevicesDummy(folder string) (map[protocol.DeviceID]
 	return res, nil
 }
 
-func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
+func (db *Lowlevel) CandidateDevices() (map[protocol.DeviceID]CandidateDevice, error) {
 	//db.CandidateLinksDummyData()
 
 	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
