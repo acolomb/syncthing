@@ -2943,7 +2943,7 @@ func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.Candid
 }
 
 func (m *model) CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error) {
-	return m.db.CandidateFoldersDummy()
+	return m.db.CandidateFolders()
 }
 
 // mapFolders returns a map of folder ID to folder configuration for the given

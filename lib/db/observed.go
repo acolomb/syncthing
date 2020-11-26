@@ -460,5 +460,36 @@ func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) 
 }
 
 func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
-	return nil, nil
+	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Release()
+	res := make(map[string]CandidateFolder)
+	for iter.Next() {
+		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
+		if err != nil {
+			return nil, err
+		}
+		cf, ok := res[folderID]
+		if !ok {
+			cf = make(CandidateFolder)
+		}
+		cf.mergeCandidateLink(ocl, candidateID, introducerID)
+		res[folderID] = cf
+		continue
+	}
+	return res, nil
+}
+
+func (cf *CandidateFolder) mergeCandidateLink(observed ObservedCandidateLink, candidate, introducer protocol.DeviceID) {
+	attributions, ok := (*cf)[candidate]
+	if !ok {
+		attributions = make(map[protocol.DeviceID]candidateFolderAttribution)
+	}
+	attributions[introducer] = candidateFolderAttribution{
+		Time:  observed.Time,
+		Label: observed.IntroducerLabel,
+	}
+	(*cf)[candidate] = attributions
 }
