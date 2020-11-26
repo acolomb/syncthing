@@ -2938,8 +2938,41 @@ func (m *model) PendingFolders(device protocol.DeviceID) (map[string]db.PendingF
 	return m.db.PendingFoldersForDevice(device)
 }
 
+// CandidateDevices lists devices that already have an indirect link over one or more
+// folders, through the introducing third parties.  For each candidate, the suggestion is
+// attributed to one or more introducing device IDs with the common folders IDs.  The
+// output is filtered for candidates having a specific folder ID if passed in non-empty.
 func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.CandidateDevice, error) {
-	return m.db.CandidateDevices()
+	candidates, err := m.db.CandidateDevices()
+	if err != nil {
+		return nil, err
+	}
+	if len(folder) > 0 {
+		for deviceID, cd := range candidates {
+			keep := false
+			for introducer, attrib := range cd.IntroducedBy {
+				if label, ok := attrib.CommonFolders[folder]; ok {
+					keep = true
+					// List only the requested folder
+					attrib.CommonFolders = map[string]string{
+						folder: label,
+					}
+					cd.IntroducedBy[introducer] = attrib
+				} else {
+					// Filter out introducers unrelated to the given folder ID
+					delete(cd.IntroducedBy, introducer)
+				}
+			}
+			if keep {
+				// Update for filtered out introducers
+				candidates[deviceID] = cd
+			} else {
+				// Filter out candidates unrelated to the given folder ID
+				delete(candidates, deviceID)
+			}
+		}
+	}
+	return candidates, nil
 }
 
 func (m *model) CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error) {
