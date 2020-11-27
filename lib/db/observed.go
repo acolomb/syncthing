@@ -273,6 +273,9 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 	return nil, nil
 }
 
+// readCandidateLink drops any invalid entries from the database after a warning log
+// message, as a side-effect.  That's the only possible "repair" measure and appropriate
+// for the importance of such entries.  They will come back soon if still relevant.
 func (db *Lowlevel) readCandidateLink(iter backend.Iterator) (ocl ObservedCandidateLink, candidateID, introducerID protocol.DeviceID, folderID string, err error) {
 	var deleteCause string
 	var bs []byte
@@ -325,7 +328,7 @@ type candidateDeviceAttribution struct {
 	SuggestedName string            `json:"suggestedName,omitempty"`
 }
 
-func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevice, error) {
+func (db *Lowlevel) CandidateDevicesDummy(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
 	res := make(map[protocol.DeviceID]CandidateDevice)
 	res[protocol.TestDeviceID1] = CandidateDevice{
 		IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
@@ -362,7 +365,10 @@ func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevi
 	return res, nil
 }
 
-func (db *Lowlevel) CandidateDevices() (map[protocol.DeviceID]CandidateDevice, error) {
+// CandidateDevices returns the same information as CandidateLinks, but aggregated by
+// candidate device.  Given a non-empty folder ID, the results are filtered to only
+// include candidate devices already sharing that specific folder indirectly.
+func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
 	//db.CandidateLinksDummyData()
 
 	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
@@ -375,6 +381,10 @@ func (db *Lowlevel) CandidateDevices() (map[protocol.DeviceID]CandidateDevice, e
 		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
 		if err != nil {
 			return nil, err
+		}
+		if len(folder) > 0 && folderID != folder {
+			// Filter out links through folders not of interest
+			continue
 		}
 		cd, ok := res[candidateID]
 		if !ok {
@@ -438,7 +448,7 @@ type candidateFolderAttribution struct {
 	Label string    `json:"label"`
 }
 
-func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) {
+func (db *Lowlevel) CandidateFoldersDummy(device protocol.DeviceID) (map[string]CandidateFolder, error) {
 	res := make(map[string]CandidateFolder)
 	res["frob"] = CandidateFolder{
 		protocol.TestDeviceID1: map[protocol.DeviceID]candidateFolderAttribution{
@@ -459,7 +469,7 @@ func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) 
 	return res, nil
 }
 
-func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
+func (db *Lowlevel) CandidateFolders(device protocol.DeviceID) (map[string]CandidateFolder, error) {
 	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
 	if err != nil {
 		return nil, err
@@ -470,6 +480,10 @@ func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
 		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
 		if err != nil {
 			return nil, err
+		}
+		if device != protocol.EmptyDeviceID && candidateID != device {
+			// Filter out links where the given device is no candidate
+			continue
 		}
 		cf, ok := res[folderID]
 		if !ok {

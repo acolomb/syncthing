@@ -2943,36 +2943,7 @@ func (m *model) PendingFolders(device protocol.DeviceID) (map[string]db.PendingF
 // attributed to one or more introducing device IDs with the common folders IDs.  The
 // output is filtered for candidates having a specific folder ID if passed in non-empty.
 func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.CandidateDevice, error) {
-	candidates, err := m.db.CandidateDevices()
-	if err != nil {
-		return nil, err
-	}
-	if len(folder) > 0 {
-		for deviceID, cd := range candidates {
-			keep := false
-			for introducer, attrib := range cd.IntroducedBy {
-				if label, ok := attrib.CommonFolders[folder]; ok {
-					keep = true
-					// List only the requested folder
-					attrib.CommonFolders = map[string]string{
-						folder: label,
-					}
-					cd.IntroducedBy[introducer] = attrib
-				} else {
-					// Filter out introducers unrelated to the given folder ID
-					delete(cd.IntroducedBy, introducer)
-				}
-			}
-			if keep {
-				// Update for filtered out introducers
-				candidates[deviceID] = cd
-			} else {
-				// Filter out candidates unrelated to the given folder ID
-				delete(candidates, deviceID)
-			}
-		}
-	}
-	return candidates, nil
+	return m.db.CandidateDevices(folder)
 }
 
 // CandidateFolders lists devices that already have an indirect link over one or more
@@ -2981,24 +2952,7 @@ func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.Candid
 // common folder ID and filters for a given candidate device unless the argument is
 // specified as EmptyDeviceID.
 func (m *model) CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error) {
-	folders, err := m.db.CandidateFolders()
-	if err != nil {
-		return nil, err
-	}
-	if device != protocol.EmptyDeviceID {
-		for folderID, candidates := range folders {
-			if introducers, ok := candidates[device]; !ok {
-				// Filter out folders where the given given device is no candidate
-				delete(folders, folderID)
-			} else {
-				// List only the requested candidate device
-				folders[folderID] = db.CandidateFolder{
-					device: introducers,
-				}
-			}
-		}
-	}
-	return folders, nil
+	return m.db.CandidateFolders(device)
 }
 
 // mapFolders returns a map of folder ID to folder configuration for the given
