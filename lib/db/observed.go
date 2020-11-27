@@ -469,6 +469,9 @@ func (db *Lowlevel) CandidateFoldersDummy(device protocol.DeviceID) (map[string]
 	return res, nil
 }
 
+// CandidateFolders returns the same information as CandidateLinks, but aggregated by
+// common folder.  The results are filtered to include only folders which the given device
+// is a candidate for, unless it is EmptyDeviceID.
 func (db *Lowlevel) CandidateFolders(device protocol.DeviceID) (map[string]CandidateFolder, error) {
 	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
 	if err != nil {
