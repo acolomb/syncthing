@@ -1418,7 +1418,7 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 				dev.ID, knownDev.Name, folder.ID)
 			// Record as a candidate device, leaving out any details about it
 			// which we already know from our configuration entry.
-		} else {
+		} else if !m.cfg.IgnoredDevice(dev.ID) {
 			// There is another device sharing this folder that we haven't
 			// heard of yet. Remember it in order to possibly present a list
 			// of suggested devices for additional cluster connectivity.
