@@ -192,9 +192,9 @@ func (db *Lowlevel) AddOrUpdateCandidateLink(folder, label string, device, intro
 // Details of a candidate device introduced through a specific folder:
 // "Introducer says FolderID exists on device CandidateID"
 type CandidateLink struct {
-	Introducer  protocol.DeviceID
-	FolderID    string
-	CandidateID protocol.DeviceID
+	Introducer protocol.DeviceID
+	Folder     string
+	Candidate  protocol.DeviceID
 
 	ObservedCandidateLink //FIXME: Not needed if this granular info will only be used in cleanup!
 }
@@ -202,23 +202,23 @@ type CandidateLink struct {
 func (db *Lowlevel) CandidateLinksDummy() ([]CandidateLink, error) {
 	res := []CandidateLink{
 		{
-			Introducer:  protocol.TestDeviceID2,
-			FolderID:    "boggl-goggl",
-			CandidateID: protocol.TestDeviceID1,
+			Introducer: protocol.TestDeviceID2,
+			Folder:     "boggl-goggl",
+			Candidate:  protocol.TestDeviceID1,
 			ObservedCandidateLink: ObservedCandidateLink{
 				Time:            time.Now().Round(time.Second),
 				IntroducerLabel: "frob"}},
 		{
-			Introducer:  protocol.TestDeviceID2,
-			FolderID:    "sleep-wells",
-			CandidateID: protocol.TestDeviceID1,
+			Introducer: protocol.TestDeviceID2,
+			Folder:     "sleep-wells",
+			Candidate:  protocol.TestDeviceID1,
 			ObservedCandidateLink: ObservedCandidateLink{
 				Time:            time.Now().Round(time.Second),
 				IntroducerLabel: "nic"}},
 		{
-			Introducer:  protocol.TestDeviceID2,
-			FolderID:    "damtn-omola",
-			CandidateID: protocol.TestDeviceID1,
+			Introducer: protocol.TestDeviceID2,
+			Folder:     "damtn-omola",
+			Candidate:  protocol.TestDeviceID1,
 			ObservedCandidateLink: ObservedCandidateLink{
 				Time:            time.Now().Round(time.Second),
 				IntroducerLabel: "ate",
