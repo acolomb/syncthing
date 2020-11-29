@@ -269,8 +269,25 @@ func (db *Lowlevel) CandidateLinksDummyData() {
 }
 
 func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
-	//FIXME not implemented
-	return nil, nil
+	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Release()
+	var res []CandidateLink
+	for iter.Next() {
+		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, CandidateLink{
+			Introducer:            introducerID,
+			Folder:                folderID,
+			Candidate:             candidateID,
+			ObservedCandidateLink: ocl,
+		})
+	}
+	return res, nil
 }
 
 // readCandidateLink drops any invalid entries from the database after a warning log
