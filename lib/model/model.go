@@ -2908,6 +2908,55 @@ func (m *model) cleanPending(existingDevices map[protocol.DeviceID]config.Device
 	}
 }
 
+func (m *model) cleanCandidates(cfg config.Configuration, removedFolders map[string]bool) {
+	// Cache to maps for easy lookups
+	ignoredDevices := make(map[protocol.DeviceID]bool, len(cfg.IgnoredDevices))
+	for _, dev := range cfg.IgnoredDevices {
+		ignoredDevices[dev.ID] = true
+	}
+	existingDevices := cfg.DeviceMap()
+	existingFolders := make(map[string]*config.FolderConfiguration, len(cfg.Folders))
+	for i := range cfg.Folders {
+		folder := &cfg.Folders[i]
+		existingFolders[folder.ID] = folder
+	}
+
+	candidates, err := m.db.CandidateLinksDummy()
+	if err != nil {
+		l.Infof("Could not iterate through candidate link entries for cleanup: %v", err)
+	}
+	for _, cl := range candidates {
+		folderCfg, ok := existingFolders[cl.Folder]
+		if !ok {
+			l.Debugf("Discarding candidate through unknown folder %v", cl.Folder)
+			m.db.RemoveCandidateLinks(cl)
+			continue
+		}
+		if !folderCfg.SharedWith(cl.Introducer) {
+			l.Debugf("Discarding candidate introduction from unrelated device %v", cl.Introducer)
+			m.db.RemoveCandidateLinks(cl)
+			continue
+		}
+		if _, ok := ignoredDevices[cl.Candidate]; ok {
+			l.Debugf("Discarding ignored candidate device %v", cl.Candidate)
+			m.db.RemoveCandidateLinks(cl)
+			continue
+		}
+		if folderCfg.SharedWith(cl.Candidate) {
+			l.Debugf("Discarding candidate already shared to %v", cl.Candidate)
+			m.db.RemoveCandidateLinks(cl)
+			continue
+		}
+		if candidate, ok := existingDevices[cl.Candidate]; ok {
+			if candidate.IgnoredFolder(cl.Folder) {
+				l.Debugf("Discarding ignored candidate folder %v for device %v", cl.Folder, cl.Candidate)
+				m.db.RemoveCandidateLinks(cl)
+				continue
+			}
+		}
+	}
+}
+
 // checkFolderRunningLocked returns nil if the folder is up and running and a
 // descriptive error if not.
 // Need to hold (read) lock on m.fmut when calling this.
