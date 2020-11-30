@@ -234,6 +234,36 @@ func (db *Lowlevel) RemoveCandidateLinks(cl CandidateLink) {
 	}
 }
 
+func (db *Lowlevel) ExpireCandidateLinks(introducer protocol.DeviceID, oldest time.Time) {
+	prefixKey, err := db.keyer.GenerateCandidateLinkKey(nil, introducer[:], nil, nil)
+	if err != nil {
+		return
+	}
+	iter, err := db.NewPrefixIterator(prefixKey)
+	if err != nil {
+		l.Warnf("Could not iterate through candidate link entries: %v", err)
+		return
+	}
+	defer iter.Release()
+	for iter.Next() {
+		var bs []byte
+		var ocl ObservedCandidateLink
+		if bs, err = db.Get(iter.Key()); err != nil {
+			// Keep inaccessible entries
+			continue
+		} else if err = ocl.Unmarshal(bs); err != nil {
+			// Keep invalid entries
+			continue
+		} else if !ocl.Time.Before(oldest) {
+			// Keep entries younger or equal to the given timestamp
+			continue
+		}
+		if err := db.Delete(iter.Key()); err != nil {
+			l.Warnf("Failed to remove candidate link entry: %v", err)
+		}
+	}
+}
+
 func (db *Lowlevel) CandidateLinksDummy() ([]CandidateLink, error) {
 	res := []CandidateLink{
 		{
