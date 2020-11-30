@@ -411,15 +411,21 @@ func (k defaultKeyer) GenerateCandidateLinkKey(key, introducer, folder, device [
 	if err != nil {
 		return nil, err
 	}
-	folderID, err := k.folderIdx.ID(folder)
-	if err != nil {
-		return nil, err
+	newLen := keyPrefixLen + keyDeviceLen
+	if len(folder) > 0 {
+		newLen += keyFolderLen + len(device)
 	}
-	key = resize(key, keyPrefixLen+keyDeviceLen+keyFolderLen+len(device))
+	key = resize(key, newLen)
 	key[0] = KeyTypeCandidateLink
 	binary.BigEndian.PutUint32(key[keyPrefixLen:], introducerID)
-	binary.BigEndian.PutUint32(key[keyPrefixLen+keyDeviceLen:], folderID)
-	copy(key[keyPrefixLen+keyDeviceLen+keyFolderLen:], device)
+	if len(folder) > 0 {
+		folderID, err := k.folderIdx.ID(folder)
+		if err != nil {
+			return nil, err
+		}
+		binary.BigEndian.PutUint32(key[keyPrefixLen+keyDeviceLen:], folderID)
+		copy(key[keyPrefixLen+keyDeviceLen+keyFolderLen:], device)
+	}
 	return key, nil
 }
 
