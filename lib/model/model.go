@@ -2908,22 +2908,11 @@ func (m *model) cleanPending(existingDevices map[protocol.DeviceID]config.Device
 	}
 }
 
-func (m *model) cleanCandidates(cfg config.Configuration, removedFolders map[string]bool) {
-	// Cache to maps for easy lookups
-	ignoredDevices := make(map[protocol.DeviceID]bool, len(cfg.IgnoredDevices))
-	for _, dev := range cfg.IgnoredDevices {
-		ignoredDevices[dev.ID] = true
-	}
-	existingDevices := cfg.DeviceMap()
-	existingFolders := make(map[string]*config.FolderConfiguration, len(cfg.Folders))
-	for i := range cfg.Folders {
-		folder := &cfg.Folders[i]
-		existingFolders[folder.ID] = folder
-	}
-
+func (m *model) cleanCandidates(existingDevices map[protocol.DeviceID]config.DeviceConfiguration, existingFolders map[string]config.FolderConfiguration, ignoredDevices deviceIDSet, removedFolders map[string]struct{}) {
 	candidates, err := m.db.CandidateLinksDummy()
 	if err != nil {
 		l.Infof("Could not iterate through candidate link entries for cleanup: %v", err)
+		return
 	}
 	for _, cl := range candidates {
 		folderCfg, ok := existingFolders[cl.Folder]
