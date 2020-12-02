@@ -183,10 +183,10 @@ func (db *Lowlevel) AddOrUpdateCandidateLink(folder, label string, device, intro
 		CandidateMeta:   meta,
 	}
 	bs, err := link.Marshal()
-	if err == nil {
-		err = db.Put(key, bs)
+	if err != nil {
+		return err
 	}
-	return err
+	return db.Put(key, bs)
 }
 
 // Details of a candidate device introduced through a specific folder:
