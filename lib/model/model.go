@@ -2992,7 +2992,7 @@ func (m *model) PendingFolders(device protocol.DeviceID) (map[string]db.PendingF
 // attributed to one or more introducing device IDs with the common folders IDs.  The
 // output is filtered for candidates having a specific folder ID if passed in non-empty.
 func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.CandidateDevice, error) {
-	return m.db.CandidateDevices(folder)
+	return m.db.CandidateDevicesForFolder(folder)
 }
 
 // CandidateFolders lists devices that already have an indirect link over one or more
@@ -3001,7 +3001,7 @@ func (m *model) CandidateDevices(folder string) (map[protocol.DeviceID]db.Candid
 // common folder ID and filters for a given candidate device unless the argument is
 // specified as EmptyDeviceID.
 func (m *model) CandidateFolders(device protocol.DeviceID) (map[string]db.CandidateFolder, error) {
-	return m.db.CandidateFolders(device)
+	return m.db.CandidateFoldersForDevice(device)
 }
 
 // mapFolders returns a map of folder ID to folder configuration for the given

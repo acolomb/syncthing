@@ -341,10 +341,16 @@ type candidateDeviceAttribution struct {
 	SuggestedName string            `json:"suggestedName,omitempty"`
 }
 
-// CandidateDevices returns the same information as CandidateLinks, but aggregated by
-// candidate device.  Given a non-empty folder ID, the results are filtered to only
-// include candidate devices already sharing that specific folder indirectly.
-func (db *Lowlevel) CandidateDevices(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
+func (db *Lowlevel) CandidateDevices() (map[protocol.DeviceID]CandidateDevice, error) {
+	return db.CandidateDevicesForFolder("")
+}
+
+// CandidateDevicesForFolder returns the same information as CandidateLinks, but
+// aggregated by candidate device.  Given a non-empty folder ID, the results are filtered
+// to only include candidate devices already sharing that specific folder indirectly.
+// Invalid entries are dropped from the database after a warning log message, as a
+// side-effect.
+func (db *Lowlevel) CandidateDevicesForFolder(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
 	//db.CandidateLinksDummyData()
 
 	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
@@ -424,10 +430,15 @@ type candidateFolderAttribution struct {
 	Label string    `json:"label"`
 }
 
-// CandidateFolders returns the same information as CandidateLinks, but aggregated by
-// common folder.  The results are filtered to include only folders which the given device
-// is a candidate for, unless it is EmptyDeviceID.
-func (db *Lowlevel) CandidateFolders(device protocol.DeviceID) (map[string]CandidateFolder, error) {
+func (db *Lowlevel) CandidateFolders() (map[string]CandidateFolder, error) {
+	return db.CandidateFoldersForDevice(protocol.EmptyDeviceID)
+}
+
+// CandidateFoldersForDevice returns the same information as CandidateLinks, but
+// aggregated by common folder.  The results are filtered to include only folders which
+// the given device is a candidate for, unless it is EmptyDeviceID.  Invalid entries are
+// dropped from the database after a warning log message, as a side-effect.
+func (db *Lowlevel) CandidateFoldersForDevice(device protocol.DeviceID) (map[string]CandidateFolder, error) {
 	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
 	if err != nil {
 		return nil, err
