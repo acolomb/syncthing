@@ -2918,28 +2918,28 @@ func (m *model) cleanCandidates(existingDevices map[protocol.DeviceID]config.Dev
 		folderCfg, ok := existingFolders[cl.Folder]
 		if !ok {
 			l.Debugf("Discarding candidate through unknown folder %v", cl.Folder)
-			m.db.RemoveCandidateLinks(cl)
+			m.db.RemoveCandidateLink(cl)
 			continue
 		}
 		if !folderCfg.SharedWith(cl.Introducer) {
 			l.Debugf("Discarding candidate introduction from unrelated device %v", cl.Introducer)
-			m.db.RemoveCandidateLinks(cl)
+			m.db.RemoveCandidateLink(cl)
 			continue
 		}
 		if _, ok := ignoredDevices[cl.Candidate]; ok {
 			l.Debugf("Discarding ignored candidate device %v", cl.Candidate)
-			m.db.RemoveCandidateLinks(cl)
+			m.db.RemoveCandidateLink(cl)
 			continue
 		}
 		if folderCfg.SharedWith(cl.Candidate) {
 			l.Debugf("Discarding candidate already shared to %v", cl.Candidate)
-			m.db.RemoveCandidateLinks(cl)
+			m.db.RemoveCandidateLink(cl)
 			continue
 		}
 		if candidate, ok := existingDevices[cl.Candidate]; ok {
 			if candidate.IgnoredFolder(cl.Folder) {
 				l.Debugf("Discarding ignored candidate folder %v for device %v", cl.Folder, cl.Candidate)
-				m.db.RemoveCandidateLinks(cl)
+				m.db.RemoveCandidateLink(cl)
 				continue
 			}
 		}

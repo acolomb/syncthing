@@ -199,37 +199,39 @@ type CandidateLink struct {
 	ObservedCandidateLink //FIXME: Not needed if this granular info will only be used in cleanup!
 }
 
-func (db *Lowlevel) RemoveCandidateLinks(cl CandidateLink) {
-	if len(cl.Folder) > 0 && cl.Candidate != protocol.EmptyDeviceID {
-		key, err := db.keyer.GenerateCandidateLinkKey(nil, cl.Introducer[:], []byte(cl.Folder), cl.Candidate[:])
-		if err != nil {
-			return
+func (db *Lowlevel) RemoveCandidateLink(cl CandidateLink) {
+	key, err := db.keyer.GenerateCandidateLinkKey(nil, cl.Introducer[:], []byte(cl.Folder), cl.Candidate[:])
+	if err != nil {
+		return
+	}
+	if err := db.Delete(key); err != nil {
+		l.Warnf("Failed to remove candidate link entry: %v", err)
+	}
+}
+
+func (db *Lowlevel) RemoveCandidateLinksForDevice(introducer protocol.DeviceID, folder string) {
+	//FIXME Method currently unused!  This would be useful for an introducer being
+	//FIXME completely removed, or a folder no longer shared with it.
+	prefixKey, err := db.keyer.GenerateCandidateLinkKey(nil, introducer[:], nil, nil)
+	if err != nil {
+		return
+	}
+	iter, err := db.NewPrefixIterator(prefixKey)
+	if err != nil {
+		l.Infof("Could not iterate through candidate link entries: %v", err)
+		return
+	}
+	defer iter.Release()
+	for iter.Next() {
+		if len(folder) > 0 {
+			keyFolder, ok := db.keyer.FolderFromCandidateLinkKey(iter.Key())
+			if ok && string(keyFolder) != folder {
+				// Skip if given folder ID does not match
+				continue
+			}
 		}
-		if err := db.Delete(key); err != nil {
+		if err := db.Delete(iter.Key()); err != nil {
 			l.Warnf("Failed to remove candidate link entry: %v", err)
-		}
-	} else {
-		prefixKey, err := db.keyer.GenerateCandidateLinkKey(nil, cl.Introducer[:], nil, nil)
-		if err != nil {
-			return
-		}
-		iter, err := db.NewPrefixIterator(prefixKey)
-		if err != nil {
-			l.Warnf("Could not iterate through candidate link entries: %v", err)
-			return
-		}
-		defer iter.Release()
-		for iter.Next() {
-			if len(cl.Folder) > 0 {
-				keyFolder, ok := db.keyer.FolderFromCandidateLinkKey(iter.Key())
-				if ok && string(keyFolder) != cl.Folder {
-					// Skip if given folder ID does not match
-					continue
-				}
-			}
-			if err := db.Delete(iter.Key()); err != nil {
-				l.Warnf("Failed to remove candidate link entry: %v", err)
-			}
 		}
 	}
 }
@@ -241,7 +243,7 @@ func (db *Lowlevel) ExpireCandidateLinks(introducer protocol.DeviceID, oldest ti
 	}
 	iter, err := db.NewPrefixIterator(prefixKey)
 	if err != nil {
-		l.Warnf("Could not iterate through candidate link entries: %v", err)
+		l.Infof("Could not iterate through candidate link entries: %v", err)
 		return
 	}
 	defer iter.Release()
