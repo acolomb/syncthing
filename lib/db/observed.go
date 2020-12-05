@@ -247,6 +247,7 @@ func (db *Lowlevel) ExpireCandidateLinks(introducer protocol.DeviceID, oldest ti
 		return
 	}
 	defer iter.Release()
+	oldest = oldest.Round(time.Second)
 	for iter.Next() {
 		var bs []byte
 		var ocl ObservedCandidateLink
