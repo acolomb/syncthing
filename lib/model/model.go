@@ -278,8 +278,10 @@ func (m *model) serve(ctx context.Context) error {
 }
 
 func (m *model) initFolders(cfg config.Configuration) error {
-	clusterConfigDevices := make(deviceIDSet, len(cfg.Devices))
-	for _, folderCfg := range cfg.Folders {
+	existingDevices := cfg.DeviceMap()
+	existingFolders := cfg.FolderMap()
+	clusterConfigDevices := make(deviceIDSet, len(existingDevices))
+	for _, folderCfg := range existingFolders {
 		if folderCfg.Paused {
 			folderCfg.CreateRoot()
 			continue
@@ -292,7 +294,8 @@ func (m *model) initFolders(cfg config.Configuration) error {
 	}
 
 	ignoredDevices := observedDeviceSet(m.cfg.IgnoredDevices())
-	m.cleanPending(cfg.DeviceMap(), cfg.FolderMap(), ignoredDevices, nil)
+	m.cleanPending(existingDevices, existingFolders, ignoredDevices, nil)
+	m.cleanCandidates(existingDevices, existingFolders, ignoredDevices, nil)
 
 	m.resendClusterConfig(clusterConfigDevices.AsSlice())
 	return nil
@@ -2840,6 +2843,7 @@ func (m *model) CommitConfiguration(from, to config.Configuration) bool {
 
 	ignoredDevices := observedDeviceSet(to.IgnoredDevices)
 	m.cleanPending(toDevices, toFolders, ignoredDevices, removedFolders)
+	m.cleanCandidates(toDevices, toFolders, ignoredDevices, removedFolders)
 
 	m.globalRequestLimiter.setCapacity(1024 * to.Options.MaxConcurrentIncomingRequestKiB())
 	m.folderIOLimiter.setCapacity(to.Options.MaxFolderConcurrency())
@@ -2909,7 +2913,7 @@ func (m *model) cleanPending(existingDevices map[protocol.DeviceID]config.Device
 }
 
 func (m *model) cleanCandidates(existingDevices map[protocol.DeviceID]config.DeviceConfiguration, existingFolders map[string]config.FolderConfiguration, ignoredDevices deviceIDSet, removedFolders map[string]struct{}) {
-	candidates, err := m.db.CandidateLinksDummy()
+	candidates, err := m.db.CandidateLinks()
 	if err != nil {
 		l.Infof("Could not iterate through candidate link entries for cleanup: %v", err)
 		return
