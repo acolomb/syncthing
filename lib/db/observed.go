@@ -249,12 +249,8 @@ func (db *Lowlevel) ExpireCandidateLinks(introducer protocol.DeviceID, oldest ti
 	defer iter.Release()
 	oldest = oldest.Round(time.Second)
 	for iter.Next() {
-		var bs []byte
 		var ocl ObservedCandidateLink
-		if bs, err = db.Get(iter.Key()); err != nil {
-			// Keep inaccessible entries
-			continue
-		} else if err = ocl.Unmarshal(bs); err != nil {
+		if err = ocl.Unmarshal(iter.Value()); err != nil {
 			// Keep invalid entries
 			continue
 		} else if !ocl.Time.Before(oldest) {
@@ -294,7 +290,6 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 // for the importance of such entries.  They will come back soon if still relevant.
 func (db *Lowlevel) readCandidateLink(iter backend.Iterator) (ocl ObservedCandidateLink, candidateID, introducerID protocol.DeviceID, folderID string, err error) {
 	var deleteCause string
-	var bs []byte
 	keyDev, ok := db.keyer.IntroducerFromCandidateLinkKey(iter.Key())
 	introducerID, err = protocol.DeviceIDFromBytes(keyDev)
 	if !ok || err != nil {
@@ -313,11 +308,7 @@ func (db *Lowlevel) readCandidateLink(iter backend.Iterator) (ocl ObservedCandid
 		deleteCause = "invalid candidate device ID"
 		goto deleteKey
 	}
-	if bs, err = db.Get(iter.Key()); err != nil {
-		deleteCause = "DB Get failed"
-		goto deleteKey
-	}
-	if err = ocl.Unmarshal(bs); err != nil {
+	if err = ocl.Unmarshal(iter.Value()); err != nil {
 		deleteCause = "DB Unmarshal failed"
 		goto deleteKey
 	}
