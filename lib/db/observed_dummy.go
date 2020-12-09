@@ -117,18 +117,22 @@ func (db *Lowlevel) CandidateDevicesDummy(folder string) (map[protocol.DeviceID]
 func (db *Lowlevel) CandidateFoldersDummy(device protocol.DeviceID) (map[string]CandidateFolder, error) {
 	res := make(map[string]CandidateFolder)
 	res["frob"] = CandidateFolder{
-		protocol.TestDeviceID1: map[protocol.DeviceID]candidateFolderAttribution{
-			protocol.TestDeviceID2: candidateFolderAttribution{
-				Time:  time.Now(),
-				Label: "FROBBY",
+		protocol.TestDeviceID1: candidateFolderDevice{
+			IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
+				protocol.TestDeviceID2: candidateFolderAttribution{
+					Time:  time.Now(),
+					Label: "FROBBY",
+				},
 			},
 		},
 	}
 	res["dodo"] = CandidateFolder{
-		protocol.TestDeviceID2: map[protocol.DeviceID]candidateFolderAttribution{
-			protocol.TestDeviceID1: candidateFolderAttribution{
-				Time:  time.Now(),
-				Label: "DODODODO",
+		protocol.TestDeviceID2: candidateFolderDevice{
+			IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
+				protocol.TestDeviceID1: candidateFolderAttribution{
+					Time:  time.Now(),
+					Label: "DODODODO",
+				},
 			},
 		},
 	}

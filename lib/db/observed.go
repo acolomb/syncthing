@@ -416,7 +416,11 @@ func (d *CandidateDevice) collectAddresses(addresses []string) {
 }
 
 // Consolidated information about a candidate folder
-type CandidateFolder map[protocol.DeviceID]map[protocol.DeviceID]candidateFolderAttribution
+type CandidateFolder map[protocol.DeviceID]candidateFolderDevice
+
+type candidateFolderDevice struct {
+	IntroducedBy map[protocol.DeviceID]candidateFolderAttribution `json:"introducedBy"`
+}
 
 // Details which an introducer told us about a candidate device
 type candidateFolderAttribution struct {
@@ -460,13 +464,15 @@ func (db *Lowlevel) CandidateFoldersForDevice(device protocol.DeviceID) (map[str
 }
 
 func (cf *CandidateFolder) mergeCandidateLink(observed ObservedCandidateLink, candidate, introducer protocol.DeviceID) {
-	attributions, ok := (*cf)[candidate]
+	device, ok := (*cf)[candidate]
 	if !ok {
-		attributions = make(map[protocol.DeviceID]candidateFolderAttribution)
+		device = candidateFolderDevice{
+			IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{},
+		}
 	}
-	attributions[introducer] = candidateFolderAttribution{
+	device.IntroducedBy[introducer] = candidateFolderAttribution{
 		Time:  observed.Time,
 		Label: observed.IntroducerLabel,
 	}
-	(*cf)[candidate] = attributions
+	(*cf)[candidate] = device
 }
