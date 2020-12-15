@@ -8,26 +8,31 @@ import (
 	"github.com/syncthing/syncthing/lib/protocol"
 )
 
+var (
+	testDev1 = protocol.TestDeviceID1
+	testDev2 = protocol.TestDeviceID2
+)
+
 func (db *Lowlevel) CandidateLinksDummy() ([]CandidateLink, error) {
 	res := []CandidateLink{
 		{
-			Introducer: protocol.TestDeviceID2,
+			Introducer: testDev2,
 			Folder:     "boggl-goggl",
-			Candidate:  protocol.TestDeviceID1,
+			Candidate:  testDev1,
 			ObservedCandidateLink: ObservedCandidateLink{
 				Time:            time.Now().Round(time.Second),
 				IntroducerLabel: "frob"}},
 		{
-			Introducer: protocol.TestDeviceID2,
+			Introducer: testDev2,
 			Folder:     "sleep-wells",
-			Candidate:  protocol.TestDeviceID1,
+			Candidate:  testDev1,
 			ObservedCandidateLink: ObservedCandidateLink{
 				Time:            time.Now().Round(time.Second),
 				IntroducerLabel: "nic"}},
 		{
-			Introducer: protocol.TestDeviceID2,
+			Introducer: testDev2,
 			Folder:     "damtn-omola",
-			Candidate:  protocol.TestDeviceID1,
+			Candidate:  testDev1,
 			ObservedCandidateLink: ObservedCandidateLink{
 				Time:            time.Now().Round(time.Second),
 				IntroducerLabel: "ate",
@@ -79,9 +84,9 @@ func (db *Lowlevel) CandidateLinksDummyData() {
 
 func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevice, error) {
 	res := map[protocol.DeviceID]CandidateDevice{
-		protocol.TestDeviceID1: CandidateDevice{
+		testDev1: CandidateDevice{
 			IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
-				protocol.TestDeviceID2: candidateDeviceAttribution{
+				testDev2: candidateDeviceAttribution{
 					// Should be the same for all folders, as they were all
 					// mentioned in the most recent ClusterConfig
 					Time: time.Now(),
@@ -98,9 +103,9 @@ func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevi
 			CertName:  "syncthing",
 			Addresses: []string{"bar", "baz"},
 		},
-		protocol.TestDeviceID2: CandidateDevice{
+		testDev2: CandidateDevice{
 			IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
-				protocol.TestDeviceID1: candidateDeviceAttribution{
+				testDev1: candidateDeviceAttribution{
 					Time: time.Now(),
 					CommonFolders: map[string]string{
 						"dodo": "DODODODO",
@@ -118,9 +123,9 @@ func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevi
 func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) {
 	res := map[string]CandidateFolder{
 		"frob": CandidateFolder{
-			protocol.TestDeviceID1: candidateFolderDevice{
+			testDev1: candidateFolderDevice{
 				IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
-					protocol.TestDeviceID2: candidateFolderAttribution{
+					testDev2: candidateFolderAttribution{
 						Time:  time.Now(),
 						Label: "FROBBY",
 					},
@@ -128,9 +133,9 @@ func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) 
 			},
 		},
 		"dodo": CandidateFolder{
-			protocol.TestDeviceID2: candidateFolderDevice{
+			testDev2: candidateFolderDevice{
 				IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
-					protocol.TestDeviceID1: candidateFolderAttribution{
+					testDev1: candidateFolderAttribution{
 						Time:  time.Now(),
 						Label: "DODODODO",
 					},
