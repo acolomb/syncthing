@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	testDev1 = protocol.TestDeviceID1
-	testDev2 = protocol.TestDeviceID2
+	testDev1, _ = protocol.DeviceIDFromString("AEAQCAI-BAEAQCA-AIBAEAQ-CAIBAEC-AQCAIBA-EAQCAIA-BAEAQCA-IBAEAQC")
+	testDev2, _ = protocol.DeviceIDFromString("AIBAEAQ-CAIBAEC-AQCAIBA-EAQCAIA-BAEAQCA-IBAEAQC-CAIBAEA-QCAIBA7")
 )
 
 func (db *Lowlevel) CandidateLinksDummy() ([]CandidateLink, error) {
