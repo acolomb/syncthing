@@ -77,61 +77,63 @@ func (db *Lowlevel) CandidateLinksDummyData() {
 	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pictures from Joe", dev2, dev3, nil))
 }
 
-func (db *Lowlevel) CandidateDevicesDummy(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
-	res := make(map[protocol.DeviceID]CandidateDevice)
-	res[protocol.TestDeviceID1] = CandidateDevice{
-		IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
-			protocol.TestDeviceID2: candidateDeviceAttribution{
-				// Should be the same for all folders, as they were all
-				// mentioned in the most recent ClusterConfig
-				Time: time.Now(),
-				CommonFolders: map[string]string{
-					"frob": "FROBBY",
-					"nic":  "NICKY",
-					"ate":  "ATEY",
+func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevice, error) {
+	res := map[protocol.DeviceID]CandidateDevice{
+		protocol.TestDeviceID1: CandidateDevice{
+			IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
+				protocol.TestDeviceID2: candidateDeviceAttribution{
+					// Should be the same for all folders, as they were all
+					// mentioned in the most recent ClusterConfig
+					Time: time.Now(),
+					CommonFolders: map[string]string{
+						"frob": "FROBBY",
+						"nic":  "NICKY",
+						"ate":  "ATEY",
+					},
+					// Only if the device ID is not known locally:
+					SuggestedName: "bazoo",
 				},
-				// Only if the device ID is not known locally:
-				SuggestedName: "bazoo",
 			},
+			// Only if the device ID is not known locally:
+			CertName:  "syncthing",
+			Addresses: []string{"bar", "baz"},
 		},
-		// Only if the device ID is not known locally:
-		CertName:  "syncthing",
-		Addresses: []string{"bar", "baz"},
-	}
-	res[protocol.TestDeviceID2] = CandidateDevice{
-		IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
-			protocol.TestDeviceID1: candidateDeviceAttribution{
-				Time: time.Now(),
-				CommonFolders: map[string]string{
-					"dodo": "DODODODO",
+		protocol.TestDeviceID2: CandidateDevice{
+			IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
+				protocol.TestDeviceID1: candidateDeviceAttribution{
+					Time: time.Now(),
+					CommonFolders: map[string]string{
+						"dodo": "DODODODO",
+					},
+					SuggestedName: "coolnhip",
 				},
-				SuggestedName: "coolnhip",
 			},
+			CertName:  "syncthing",
+			Addresses: []string{"bar", "baz"},
 		},
-		CertName:  "syncthing",
-		Addresses: []string{"bar", "baz"},
 	}
 	return res, nil
 }
 
-func (db *Lowlevel) CandidateFoldersDummy(device protocol.DeviceID) (map[string]CandidateFolder, error) {
-	res := make(map[string]CandidateFolder)
-	res["frob"] = CandidateFolder{
-		protocol.TestDeviceID1: candidateFolderDevice{
-			IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
-				protocol.TestDeviceID2: candidateFolderAttribution{
-					Time:  time.Now(),
-					Label: "FROBBY",
+func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) {
+	res := map[string]CandidateFolder{
+		"frob": CandidateFolder{
+			protocol.TestDeviceID1: candidateFolderDevice{
+				IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
+					protocol.TestDeviceID2: candidateFolderAttribution{
+						Time:  time.Now(),
+						Label: "FROBBY",
+					},
 				},
 			},
 		},
-	}
-	res["dodo"] = CandidateFolder{
-		protocol.TestDeviceID2: candidateFolderDevice{
-			IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
-				protocol.TestDeviceID1: candidateFolderAttribution{
-					Time:  time.Now(),
-					Label: "DODODODO",
+		"dodo": CandidateFolder{
+			protocol.TestDeviceID2: candidateFolderDevice{
+				IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
+					protocol.TestDeviceID1: candidateFolderAttribution{
+						Time:  time.Now(),
+						Label: "DODODODO",
+					},
 				},
 			},
 		},
