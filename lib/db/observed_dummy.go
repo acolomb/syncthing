@@ -142,22 +142,34 @@ func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevi
 
 func (db *Lowlevel) CandidateFoldersDummy() (map[string]CandidateFolder, error) {
 	res := map[string]CandidateFolder{
-		"frob": CandidateFolder{
-			testDev1: candidateFolderDevice{
+		"abcde-fghij": CandidateFolder{
+			testDev6: candidateFolderDevice{
 				IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
-					testDev2: candidateFolderAttribution{
-						Time:  time.Now(),
-						Label: "FROBBY",
+					testDev5: candidateFolderAttribution{
+						Time:  time.Date(2020, 3, 18, 11, 43, 7, 0, time.Local),
+						Label: "Mighty nice folder",
 					},
 				},
 			},
 		},
-		"dodo": CandidateFolder{
-			testDev2: candidateFolderDevice{
+		"cpkn4-57ysy": CandidateFolder{
+			testDev4: candidateFolderDevice{
 				IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
-					testDev1: candidateFolderAttribution{
-						Time:  time.Now(),
-						Label: "DODODODO",
+					testDev5: candidateFolderAttribution{
+						Time:  time.Date(2020, 3, 18, 11, 43, 7, 0, time.Local),
+						Label: "Pictures from Joe",
+					},
+				},
+			},
+			testDev6: candidateFolderDevice{
+				IntroducedBy: map[protocol.DeviceID]candidateFolderAttribution{
+					testDev5: candidateFolderAttribution{
+						Time:  time.Date(2020, 3, 18, 11, 43, 7, 0, time.Local),
+						Label: "Family pics",
+					},
+					testDev2: candidateFolderAttribution{
+						Time:  time.Date(2020, 11, 22, 14, 56, 0, 0, time.Local),
+						Label: "Family pics",
 					},
 				},
 			},
