@@ -56,7 +56,7 @@ func (db *Lowlevel) CandidateLinksDummyData() {
 			CertName: "",
 			Addresses: []string{
 				"192.168.1.2:22000",
-				"[2a02:8070:::ff34:1234::aabb]:22000",
+				"[2a02:8070::ff34:1234::aabb]:22000",
 			},
 			SuggestedName: "Jane",
 		}))
@@ -66,7 +66,7 @@ func (db *Lowlevel) CandidateLinksDummyData() {
 			CertName: "",
 			Addresses: []string{
 				"192.168.1.2:22000",
-				"[2a02:8070:::ff34:1234::aabb]:22000",
+				"[2a02:8070::ff34:1234::aabb]:22000",
 			},
 			SuggestedName: "Jane's Laptop",
 		}))
@@ -82,37 +82,59 @@ func (db *Lowlevel) CandidateLinksDummyData() {
 
 func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevice, error) {
 	res := map[protocol.DeviceID]CandidateDevice{
-		testDev1: CandidateDevice{
+		testDev3: CandidateDevice{
 			IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
-				testDev2: candidateDeviceAttribution{
+				testDev5: candidateDeviceAttribution{
 					// Should be the same for all folders, as they were all
 					// mentioned in the most recent ClusterConfig
-					Time: time.Now(),
+					Time: time.Date(2020, 3, 18, 11, 43, 7, 0, time.Local),
 					CommonFolders: map[string]string{
-						"frob": "FROBBY",
-						"nic":  "NICKY",
-						"ate":  "ATEY",
+						"cpkn4-57ysy": "Pics of J & J",
 					},
 					// Only if the device ID is not known locally:
-					SuggestedName: "bazoo",
+					SuggestedName: "Jane's Laptop",
+				},
+				testDev4: candidateDeviceAttribution{
+					Time: time.Date(2020, 3, 1, 10, 12, 13, 0, time.Local),
+					CommonFolders: map[string]string{
+						"cpkn4-57ysy": "Pics from Jane",
+					},
+					SuggestedName: "Jane",
 				},
 			},
 			// Only if the device ID is not known locally:
-			CertName:  "syncthing",
-			Addresses: []string{"bar", "baz"},
+			CertName: "",
+			Addresses: []string{
+				"192.168.1.2:22000",
+				"[2a02:8070::ff34:1234::aabb]:22000",
+			},
 		},
-		testDev2: CandidateDevice{
+		testDev6: CandidateDevice{
 			IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
-				testDev1: candidateDeviceAttribution{
-					Time: time.Now(),
+				testDev5: candidateDeviceAttribution{
+					Time: time.Date(2020, 3, 18, 11, 43, 7, 0, time.Local),
 					CommonFolders: map[string]string{
-						"dodo": "DODODODO",
+						"cpkn4-57ysy": "Family pics",
+						"abcde-fghij": "Mighty nice folder",
 					},
-					SuggestedName: "coolnhip",
+				},
+				testDev2: candidateDeviceAttribution{
+					Time: time.Date(2020, 2, 22, 14, 56, 0, 0, time.Local),
+					CommonFolders: map[string]string{
+						"cpkn4-57ysy": "Family pics",
+					},
 				},
 			},
-			CertName:  "syncthing",
-			Addresses: []string{"bar", "baz"},
+		},
+		testDev4: CandidateDevice{
+			IntroducedBy: map[protocol.DeviceID]candidateDeviceAttribution{
+				testDev5: candidateDeviceAttribution{
+					Time: time.Date(2020, 3, 18, 11, 43, 7, 0, time.Local),
+					CommonFolders: map[string]string{
+						"cpkn4-57ysy": "Pictures from Joe",
+					},
+				},
+			},
 		},
 	}
 	return res, nil
