@@ -25,14 +25,18 @@ func (db *Lowlevel) CandidateLinksDummy() ([]CandidateLink, error) {
 			Candidate:  testDev1,
 			ObservedCandidateLink: ObservedCandidateLink{
 				Time:            time.Now().Round(time.Second),
-				IntroducerLabel: "frob"}},
+				IntroducerLabel: "frob",
+			},
+		},
 		{
 			Introducer: testDev2,
 			Folder:     "sleep-wells",
 			Candidate:  testDev1,
 			ObservedCandidateLink: ObservedCandidateLink{
 				Time:            time.Now().Round(time.Second),
-				IntroducerLabel: "nic"}},
+				IntroducerLabel: "nic",
+			},
+		},
 		{
 			Introducer: testDev2,
 			Folder:     "damtn-omola",
