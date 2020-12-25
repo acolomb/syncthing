@@ -190,7 +190,7 @@ func (db *Lowlevel) AddOrUpdateCandidateLink(folder, label string, device, intro
 }
 
 // Details of a candidate device introduced through a specific folder:
-// "Introducer says FolderID exists on device CandidateID"
+// "Introducer says Folder exists on device Candidate"
 type CandidateLink struct {
 	Introducer protocol.DeviceID
 	Folder     string
