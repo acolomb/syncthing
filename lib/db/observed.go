@@ -196,7 +196,7 @@ type CandidateLink struct {
 	Folder     string
 	Candidate  protocol.DeviceID
 
-	ObservedCandidateLink //FIXME: Not needed if this granular info will only be used in cleanup!
+	// No embedded ObservedCandidateDevice needed, as this is sufficient for cleanup
 }
 
 func (db *Lowlevel) RemoveCandidateLink(cl CandidateLink) {
@@ -280,7 +280,7 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 	defer iter.Release()
 	var res []CandidateLink
 	for iter.Next() {
-		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
+		_, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
 		if err != nil {
 			return nil, err
 		}
@@ -288,7 +288,6 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 			Introducer:            introducerID,
 			Folder:                folderID,
 			Candidate:             candidateID,
-			ObservedCandidateLink: ocl,
 		})
 	}
 	return res, nil
