@@ -236,31 +236,40 @@ func (db *Lowlevel) RemoveCandidateLinksForDevice(introducer protocol.DeviceID, 
 	}
 }
 
-func (db *Lowlevel) ExpireCandidateLinks(introducer protocol.DeviceID, oldest time.Time) {
+func (db *Lowlevel) RemoveCandidateLinksBeforeTime(introducer protocol.DeviceID, oldest time.Time) ([]CandidateLink, error) {
 	prefixKey, err := db.keyer.GenerateCandidateLinkKey(nil, introducer[:], nil, nil)
 	if err != nil {
-		return
+		return nil, err
 	}
 	iter, err := db.NewPrefixIterator(prefixKey)
 	if err != nil {
-		l.Infof("Could not iterate through candidate link entries: %v", err)
-		return
+		return nil, err
 	}
 	defer iter.Release()
 	oldest = oldest.Round(time.Second)
+	var res []CandidateLink
 	for iter.Next() {
 		var ocl ObservedCandidateLink
-		if err = ocl.Unmarshal(iter.Value()); err != nil {
-			// Keep invalid entries
-			continue
-		} else if !ocl.Time.Before(oldest) {
+		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
+		if err != nil {
+			return nil, err
+		} else if ocl.Time.Before(oldest) {
+			l.Infof("Removing stale candidate link (device %v has folder %s) from introducer %s, last seen %v",
+				candidateID, folderID, introducerID.Short(), ocl.Time)
+		} else {
 			// Keep entries younger or equal to the given timestamp
 			continue
 		}
 		if err := db.Delete(iter.Key()); err != nil {
 			l.Warnf("Failed to remove candidate link entry: %v", err)
 		}
+		res = append(res, CandidateLink{
+			Introducer: introducer,
+			Folder:     folderID,
+			Candidate:  candidateID,
+		})
 	}
+	return res, nil
 }
 
 func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
