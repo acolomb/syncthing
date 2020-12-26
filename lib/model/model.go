@@ -1423,7 +1423,6 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 			// Local folder is already shared with the candidate device.
 			continue
 		}
-		var meta *db.IntroducedDeviceDetails
 		if knownDev, ok := m.cfg.Device(dev.ID); ok {
 			if knownDev.IgnoredFolder(folder.ID) {
 				// Folder deliberately ignored from this candidate.
@@ -1447,13 +1446,9 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 				dev.ID, dev.Name, folder.ID)
 			// Record as a new candidate device, remembering all the details
 			// received from our known peer.
-			meta = &db.IntroducedDeviceDetails{
-				CertName:      dev.CertName,
-				Addresses:     dev.Addresses,
-				SuggestedName: dev.Name,
-			}
 		}
-		if err := m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, introducer, meta); err != nil {
+		if err := m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, introducer,
+			dev.CertName, dev.Name, dev.Addresses); err != nil {
 			l.Warnf("Failed to persist candidate link entry to database: %v", err)
 		}
 	}
