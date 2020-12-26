@@ -272,6 +272,8 @@ func (db *Lowlevel) RemoveCandidateLinksBeforeTime(introducer protocol.DeviceID,
 	return res, nil
 }
 
+// CandidateLinks enumerates all entries as a flat list.  Invalid ones are dropped from
+// the database after a warning log message, as a side-effect.
 func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
 	if err != nil {
@@ -282,12 +284,13 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 	for iter.Next() {
 		_, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
 		if err != nil {
+			// Fatal error, not just invalid (and already discarded) entry
 			return nil, err
 		}
 		res = append(res, CandidateLink{
-			Introducer:            introducerID,
-			Folder:                folderID,
-			Candidate:             candidateID,
+			Introducer: introducerID,
+			Folder:     folderID,
+			Candidate:  candidateID,
 		})
 	}
 	return res, nil
