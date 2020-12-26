@@ -422,9 +422,10 @@ func (d *CandidateDevice) collectAddresses(addresses []string) {
 	}
 }
 
-// Consolidated information about a candidate folder
+// Consolidated information about candidate devices linked through a certain common folder
 type CandidateFolder map[protocol.DeviceID]candidateFolderDevice
 
+// Description of one candidate device, mainly who announced the link to our folder
 type candidateFolderDevice struct {
 	IntroducedBy map[protocol.DeviceID]candidateFolderAttribution `json:"introducedBy"`
 }
@@ -453,6 +454,7 @@ func (db *Lowlevel) CandidateFoldersForDevice(device protocol.DeviceID) (map[str
 	for iter.Next() {
 		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
 		if err != nil {
+			// Fatal error, not just invalid (and already discarded) entry
 			return nil, err
 		}
 		if device != protocol.EmptyDeviceID && candidateID != device {
