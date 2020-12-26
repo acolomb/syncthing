@@ -353,8 +353,6 @@ func (db *Lowlevel) CandidateDevices() (map[protocol.DeviceID]CandidateDevice, e
 // Invalid entries are dropped from the database after a warning log message, as a
 // side-effect.
 func (db *Lowlevel) CandidateDevicesForFolder(folder string) (map[protocol.DeviceID]CandidateDevice, error) {
-	//db.CandidateLinksDummyData()
-
 	iter, err := db.NewPrefixIterator([]byte{KeyTypeCandidateLink})
 	if err != nil {
 		return nil, err
@@ -364,6 +362,7 @@ func (db *Lowlevel) CandidateDevicesForFolder(folder string) (map[protocol.Devic
 	for iter.Next() {
 		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
 		if err != nil {
+			// Fatal error, not just invalid (and already discarded) entry
 			return nil, err
 		}
 		if len(folder) > 0 && folderID != folder {
@@ -383,6 +382,7 @@ func (db *Lowlevel) CandidateDevicesForFolder(folder string) (map[protocol.Devic
 	return res, nil
 }
 
+// mergeCandidateLink aggregates one recorded link's information onto the existing structure
 func (cd *CandidateDevice) mergeCandidateLink(observed ObservedCandidateLink, folder string, introducer protocol.DeviceID) {
 	attrib, ok := cd.IntroducedBy[introducer]
 	if !ok {
@@ -398,13 +398,12 @@ func (cd *CandidateDevice) mergeCandidateLink(observed ObservedCandidateLink, fo
 			cd.CertName = observed.CandidateMeta.CertName
 		}
 		cd.collectAddresses(observed.CandidateMeta.Addresses)
-		// Only if the device ID is not known locally:
 		attrib.SuggestedName = observed.CandidateMeta.SuggestedName
 	}
 	cd.IntroducedBy[introducer] = attrib
 }
 
-// Collect addresses to try for contacting a candidate device later
+// collectAddresses deduplicates addresses to try for contacting a candidate device later
 func (d *CandidateDevice) collectAddresses(addresses []string) {
 	if len(addresses) == 0 {
 		return
