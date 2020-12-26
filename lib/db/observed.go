@@ -252,10 +252,13 @@ func (db *Lowlevel) RemoveCandidateLinksBeforeTime(introducer protocol.DeviceID,
 	var res []CandidateLink
 	for iter.Next() {
 		var ocl ObservedCandidateLink
-		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
+		ocl, candidateID, introducerID, folderID, ok, err := db.readCandidateLink(iter)
 		if err != nil {
 			// Fatal error, not just invalid (and already discarded) entry
 			return nil, err
+		} else if !ok {
+			// Skip in the returned list, as likely invalid values anyway
+			continue
 		} else if ocl.Time.Before(oldest) {
 			l.Infof("Removing stale candidate link (device %v has folder %s) from introducer %s, last seen %v",
 				candidateID, folderID, introducerID.Short(), ocl.Time)
@@ -285,10 +288,12 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 	defer iter.Release()
 	var res []CandidateLink
 	for iter.Next() {
-		_, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
+		_, candidateID, introducerID, folderID, ok, err := db.readCandidateLink(iter)
 		if err != nil {
 			// Fatal error, not just invalid (and already discarded) entry
 			return nil, err
+		} else if !ok {
+			continue
 		}
 		res = append(res, CandidateLink{
 			Introducer: introducerID,
@@ -301,8 +306,10 @@ func (db *Lowlevel) CandidateLinks() ([]CandidateLink, error) {
 
 // readCandidateLink drops any invalid entries from the database after a warning log
 // message, as a side-effect.  That's the only possible "repair" measure and appropriate
-// for the importance of such entries.  They will come back soon if still relevant.
-func (db *Lowlevel) readCandidateLink(iter backend.Iterator) (ocl ObservedCandidateLink, candidateID, introducerID protocol.DeviceID, folderID string, err error) {
+// for the importance of such entries.  They will come back soon if still relevant.  For
+// such invalid entries, "valid" is returned false and the error value from the deletion
+// is passed on.
+func (db *Lowlevel) readCandidateLink(iter backend.Iterator) (ocl ObservedCandidateLink, candidateID, introducerID protocol.DeviceID, folderID string, valid bool, err error) {
 	var deleteCause string
 	keyDev, ok := db.keyer.IntroducerFromCandidateLinkKey(iter.Key())
 	introducerID, err = protocol.DeviceIDFromBytes(keyDev)
@@ -326,6 +333,7 @@ func (db *Lowlevel) readCandidateLink(iter backend.Iterator) (ocl ObservedCandid
 		deleteCause = "DB Unmarshal failed"
 		goto deleteKey
 	}
+	valid = true
 	return
 
 deleteKey:
@@ -366,10 +374,12 @@ func (db *Lowlevel) CandidateDevicesForFolder(folder string) (map[protocol.Devic
 	defer iter.Release()
 	res := make(map[protocol.DeviceID]CandidateDevice)
 	for iter.Next() {
-		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
+		ocl, candidateID, introducerID, folderID, ok, err := db.readCandidateLink(iter)
 		if err != nil {
 			// Fatal error, not just invalid (and already discarded) entry
 			return nil, err
+		} else if !ok {
+			continue
 		}
 		if len(folder) > 0 && folderID != folder {
 			// Filter out links through folders not of interest
@@ -458,10 +468,12 @@ func (db *Lowlevel) CandidateFoldersForDevice(device protocol.DeviceID) (map[str
 	defer iter.Release()
 	res := make(map[string]CandidateFolder)
 	for iter.Next() {
-		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
+		ocl, candidateID, introducerID, folderID, ok, err := db.readCandidateLink(iter)
 		if err != nil {
 			// Fatal error, not just invalid (and already discarded) entry
 			return nil, err
+		} else if !ok {
+			continue
 		}
 		if device != protocol.EmptyDeviceID && candidateID != device {
 			// Filter out links where the given device is no candidate
