@@ -1302,9 +1302,7 @@ func (m *model) ccHandleFolders(folders []protocol.Folder, deviceCfg config.Devi
 
 		cfg, ok := m.cfg.Folder(folder.ID)
 		if ok {
-			if err := m.ccHandleFolderCandidates(folder, deviceID, cfg); err != nil {
-				//FIXME
-			}
+			m.ccHandleFolderCandidates(folder, deviceID, cfg)
 			folderDevice, ok = cfg.Device(deviceID)
 		}
 		if !ok {
@@ -1404,7 +1402,7 @@ func (m *model) ccHandleFolders(folders []protocol.Folder, deviceCfg config.Devi
 	return tempIndexFolders, paused, nil
 }
 
-func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer protocol.DeviceID, fcfg config.FolderConfiguration) error {
+func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer protocol.DeviceID, fcfg config.FolderConfiguration) {
 	// Note this is called only for folders we already share with the remote FIXME
 	for _, dev := range folder.Devices {
 		if dev.ID == m.id || dev.ID == introducer {
@@ -1419,7 +1417,7 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 		var meta *db.IntroducedDeviceDetails
 		if knownDev, ok := m.cfg.Device(dev.ID); ok {
 			// This device is known to us and shares this folder, but not
-			// directly with us. Remember it in order to possibly present a
+			// directly with us.  Remember it in order to possibly present a
 			// list of suggested devices for additional cluster connectivity.
 			l.Infof("Known device %s (%s) is not directly sharing common folder %s, marking as candidate",
 				dev.ID.Short(), knownDev.Name, folder.ID)
@@ -1427,7 +1425,7 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 			// which we already know from our configuration entry.
 		} else if !m.cfg.IgnoredDevice(dev.ID) {
 			// There is another device sharing this folder that we haven't
-			// heard of yet. Remember it in order to possibly present a list
+			// heard of yet.  Remember it in order to possibly present a list
 			// of suggested devices for additional cluster connectivity.
 			l.Infof("Unknown device %v (%s) is a candidate for indirectly shared folder %s",
 				dev.ID, dev.Name, folder.ID)
@@ -1443,7 +1441,6 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 			l.Warnf("Failed to persist candidate link entry to database: %v", err)
 		}
 	}
-	return nil //FIXME accumulate errors? abort on first?
 }
 
 func (m *model) ccCheckEncryption(fcfg config.FolderConfiguration, folderDevice config.FolderDeviceConfiguration, ccDeviceInfos *indexSenderStartInfo, deviceUntrusted bool) error {
