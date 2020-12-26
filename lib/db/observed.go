@@ -236,6 +236,8 @@ func (db *Lowlevel) RemoveCandidateLinksForDevice(introducer protocol.DeviceID, 
 	}
 }
 
+// RemoveCandidateLinksBeforeTime removes entries from a specific introducer device which
+// are older than a given timestamp or invalid.  It returns only the valid removed entries.
 func (db *Lowlevel) RemoveCandidateLinksBeforeTime(introducer protocol.DeviceID, oldest time.Time) ([]CandidateLink, error) {
 	prefixKey, err := db.keyer.GenerateCandidateLinkKey(nil, introducer[:], nil, nil)
 	if err != nil {
@@ -252,6 +254,7 @@ func (db *Lowlevel) RemoveCandidateLinksBeforeTime(introducer protocol.DeviceID,
 		var ocl ObservedCandidateLink
 		ocl, candidateID, introducerID, folderID, err := db.readCandidateLink(iter)
 		if err != nil {
+			// Fatal error, not just invalid (and already discarded) entry
 			return nil, err
 		} else if ocl.Time.Before(oldest) {
 			l.Infof("Removing stale candidate link (device %v has folder %s) from introducer %s, last seen %v",
