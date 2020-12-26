@@ -199,6 +199,7 @@ type CandidateLink struct {
 	// No embedded ObservedCandidateDevice needed, as this is sufficient for cleanup
 }
 
+// RemoveCandidateLink deletes a single entry, ideally retreived through CandidateLinks()
 func (db *Lowlevel) RemoveCandidateLink(cl CandidateLink) {
 	key, err := db.keyer.GenerateCandidateLinkKey(nil, cl.Introducer[:], []byte(cl.Folder), cl.Candidate[:])
 	if err != nil {
@@ -209,6 +210,8 @@ func (db *Lowlevel) RemoveCandidateLink(cl CandidateLink) {
 	}
 }
 
+// RemoveCandidateLinksForDevice deletes all entries related to a certain introducer and
+// common folder ID.
 func (db *Lowlevel) RemoveCandidateLinksForDevice(introducer protocol.DeviceID, folder string) {
 	//FIXME Method currently unused!  This would be useful for an introducer being
 	//FIXME completely removed, or a folder no longer shared with it.
