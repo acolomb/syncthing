@@ -1433,8 +1433,6 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 			// list of suggested devices for additional cluster connectivity.
 			l.Infof("Known device %s (%s) is not directly sharing common folder %s, marking as candidate",
 				dev.ID.Short(), knownDev.Name, folder.ID)
-			// Record as a candidate device, leaving out any details about it
-			// which we already know from our configuration entry.
 		} else if m.cfg.IgnoredDevice(dev.ID) {
 			// Device is deliberately ignored, so skip as candidate.
 			continue
@@ -1444,9 +1442,9 @@ func (m *model) ccHandleFolderCandidates(folder protocol.Folder, introducer prot
 			// of suggested devices for additional cluster connectivity.
 			l.Infof("Unknown device %v (%s) is a candidate for indirectly shared folder %s",
 				dev.ID, dev.Name, folder.ID)
-			// Record as a new candidate device, remembering all the details
-			// received from our known peer.
 		}
+		// Record as a new candidate device, remembering all the details received
+		// from our known peer.
 		if err := m.db.AddOrUpdateCandidateLink(folder.ID, folder.Label, dev.ID, introducer,
 			dev.CertName, dev.Name, dev.Addresses); err != nil {
 			l.Warnf("Failed to persist candidate link entry to database: %v", err)
