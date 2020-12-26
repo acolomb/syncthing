@@ -493,6 +493,7 @@ func (db *Lowlevel) CandidateFoldersForDevice(device protocol.DeviceID) (map[str
 	return res, nil
 }
 
+// mergeCandidateLink aggregates one recorded link's information onto the existing structure
 func (cf *CandidateFolder) mergeCandidateLink(observed ObservedCandidateLink, candidate, introducer protocol.DeviceID) {
 	device, ok := (*cf)[candidate]
 	if !ok {
