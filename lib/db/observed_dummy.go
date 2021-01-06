@@ -55,13 +55,21 @@ func (db *Lowlevel) CandidateLinksDummyData() {
 		"[2a02:8070::ff34:1234::aabb]:22000",
 	}))
 
-	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Family pics", testDev6, testDev5, "FIXME", "FIXME", nil))
+	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Family pics", testDev6, testDev5, "", "Joe's Laptop", []string{
+		"dynamic",
+	}))
 
-	l.Warnln(db.AddOrUpdateCandidateLink("abcde-fghij", "Mighty nice folder", testDev6, testDev5, "FIXME", "FIXME", nil))
+	l.Warnln(db.AddOrUpdateCandidateLink("abcde-fghij", "Mighty nice folder", testDev6, testDev5, "", "Joe's Laptop", []string{
+		"dynamic",
+	}))
 
-	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Family pics", testDev6, testDev2, "FIXME", "FIXME", nil))
+	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Family pics", testDev6, testDev2, "", "Joe", []string{
+		"dynamic",
+	}))
 
-	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pictures from Joe", testDev4, testDev5, "FIXME", "FIXME", nil))
+	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pictures from Joe", testDev4, testDev5, "", "Laptop", []string{
+		"dynamic",
+	}))
 }
 
 func (db *Lowlevel) CandidateDevicesDummy() (map[protocol.DeviceID]CandidateDevice, error) {
