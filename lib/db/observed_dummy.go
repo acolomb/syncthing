@@ -46,13 +46,14 @@ func (db *Lowlevel) CandidateLinksDummy() ([]CandidateLink, error) {
 
 func (db *Lowlevel) CandidateLinksDummyData() {
 	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pics from Jane", testDev3, testDev4, "", "Jane", []string{
-		"192.168.1.2:22000",
-		"[2a02:8070::ff34:1234::aabb]:22000",
+		"tcp://192.168.1.2:22000",
+		"tcp://[2a02:8070::ff34:1234::aabb]:22000",
 	}))
 
 	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Pics of J & J", testDev3, testDev5, "", "Jane's Laptop", []string{
-		"192.168.1.2:22000",
-		"[2a02:8070::ff34:1234::aabb]:22000",
+		"tcp://janes.laptop.example.com:22000",
+		"tcp://[2a02:8070::ff34:1234::aabb]:22000",
+		"dynamic",
 	}))
 
 	l.Warnln(db.AddOrUpdateCandidateLink("cpkn4-57ysy", "Family pics", testDev6, testDev5, "", "Joe's Laptop", []string{
