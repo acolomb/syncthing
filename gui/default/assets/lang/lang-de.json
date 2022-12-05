@@ -508,5 +508,9 @@
     "theme-name-light": "Hell",
     "{%device%} wants to share folder \"{%folder%}\".": "{{device}} möchte den Ordner „{{folder}}“ teilen.",
     "{%device%} wants to share folder \"{%folderlabel%}\" ({%folder%}).": "{{device}} möchte den Ordner „{{folderlabel}}“ ({{folder}}) teilen.",
-    "{%reintroducer%} might reintroduce this device.": "{{reintroducer}} könnte dieses Gerät wieder einführen."
+    "{%reintroducer%} might reintroduce this device.": "{{reintroducer}} könnte dieses Gerät wieder einführen.",
+    "QUIC WAN": "QUIC WAN",
+    "Relay WAN": "Weiterleitung WAN",
+    "QUIC LAN": "QUIC LAN",
+    "Relay LAN": "Weiterleitung LAN"
 }
