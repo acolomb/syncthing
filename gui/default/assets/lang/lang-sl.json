@@ -391,6 +391,7 @@
     "TCP LAN": "TCP LAN",
     "TCP WAN": "TCP WAN",
     "Take me back": "Daj me nazaj",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "Naslov grafičnega vmesnika preglasijo možnosti zagona. Spremembe tukaj ne bodo veljale, dokler je preglasitev v veljavi.",
     "The Syncthing Authors": "Syncthing avtorji",
     "The Syncthing admin interface is configured to allow remote access without a password.": "Skrbniški vmesnik Syncthing je konfiguriran tako, da omogoča oddaljeni dostop brez gesla.",
