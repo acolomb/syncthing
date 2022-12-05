@@ -391,6 +391,7 @@
     "TCP LAN": "TCP LAN",
     "TCP WAN": "TCP WAN",
     "Take me back": "Portami indietro",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "L'indirizzo della GUI è sovrascritto dalle opzioni di avvio. Le modifiche qui non avranno effetto finché queste opzioni sono impostate.",
     "The Syncthing Authors": "Autori di Syncthing",
     "The Syncthing admin interface is configured to allow remote access without a password.": "L'interfaccia di amministrazione di Syncthing è configurata in modo da permettere l'accesso senza password.",
