@@ -282,7 +282,9 @@
     "Preview": "Vorschau",
     "Preview Usage Report": "Vorschau des Nutzungsberichts",
     "QR code": "QR-Code",
-    "QUIC": "QUIC",
+    "QUIC": "QUIC Test",
+    "QUIC LAN": "QUIC LAN",
+    "QUIC WAN": "QUIC WAN",
     "QUIC connections are in most cases considered suboptimal": "QUIC-Verbindungen sind in den meisten Fällen suboptimal",
     "Quick guide to supported patterns": "Schnellanleitung zu den unterstützten Mustern",
     "Random": "Zufall",
@@ -292,6 +294,8 @@
     "Recent Changes": "Letzte Änderungen",
     "Reduced by ignore patterns": "Durch Ignoriermuster reduziert",
     "Relay": "Weiterleitung",
+    "Relay LAN": "Weiterleitung LAN",
+    "Relay WAN": "Weiterleitung WAN",
     "Release Notes": "Veröffentlichungshinweise",
     "Release candidates contain the latest features and fixes. They are similar to the traditional bi-weekly Syncthing releases.": "Veröffentlichungskandidaten enthalten die neuesten Funktionen und Verbesserungen. Sie gleichen den üblichen zweiwöchentlichen Syncthing-Veröffentlichungen.",
     "Remote Devices": "Externe Geräte",
@@ -508,9 +512,5 @@
     "theme-name-light": "Hell",
     "{%device%} wants to share folder \"{%folder%}\".": "{{device}} möchte den Ordner „{{folder}}“ teilen.",
     "{%device%} wants to share folder \"{%folderlabel%}\" ({%folder%}).": "{{device}} möchte den Ordner „{{folderlabel}}“ ({{folder}}) teilen.",
-    "{%reintroducer%} might reintroduce this device.": "{{reintroducer}} könnte dieses Gerät wieder einführen.",
-    "QUIC WAN": "QUIC WAN",
-    "Relay WAN": "Weiterleitung WAN",
-    "QUIC LAN": "QUIC LAN",
-    "Relay LAN": "Weiterleitung LAN"
+    "{%reintroducer%} might reintroduce this device.": "{{reintroducer}} könnte dieses Gerät wieder einführen."
 }
