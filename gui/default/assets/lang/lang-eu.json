@@ -391,6 +391,7 @@
     "TCP LAN": "TCP LAN",
     "TCP WAN": "TCP WAN",
     "Take me back": "Eraman nazazu atzera",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "Erabiltzailearen Interfaze Grafikoaren GUI helbidea gainidatzita dago hasierako aukerengatik.  Hemengo aldaketek ez dute ondoriorik izango gainidatzi aktibo dagoen bitartean.",
     "The Syncthing Authors": "Syncthing autoreak",
     "The Syncthing admin interface is configured to allow remote access without a password.": "Syncthing-en administrazio interfazea pentsatua da urrundikako helbideak pasahitzik gabe onartzeko !",
