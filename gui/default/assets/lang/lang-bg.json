@@ -391,6 +391,7 @@
     "TCP LAN": "TCP LAN",
     "TCP WAN": "TCP WAN",
     "Take me back": "Назад",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "Адресът на интерфейса не се взима под внимание заради параметри при стартиране. Промените тук няма да бъдат отразени докато параметрите не бъдат променени.",
     "The Syncthing Authors": "Автори на Syncthing",
     "The Syncthing admin interface is configured to allow remote access without a password.": "Администраторският панел на Syncthing разрешава дистанционен достъп без да изисква парола.",
