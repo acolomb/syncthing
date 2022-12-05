@@ -391,6 +391,7 @@
     "TCP LAN": "TCP LAN",
     "TCP WAN": "TCP WAN",
     "Take me back": "Vissza",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "A grafikus felület címét az indítási beállítások felülírták. Az itt történő módosítások hatástalanok maradnak, amíg a felülírás érvényben van.",
     "The Syncthing Authors": "A Syncthing szerzői",
     "The Syncthing admin interface is configured to allow remote access without a password.": "A Syncthing adminisztrációs felületének távoli elérése be van kapcsolva jelszó nélkül.",
