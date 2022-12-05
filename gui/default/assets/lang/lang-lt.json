@@ -391,6 +391,7 @@
     "TCP LAN": "TCP LAN",
     "TCP WAN": "TCP WAN",
     "Take me back": "Sugrąžinkite mane",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "Valdymo skydelio adresas yra nustelbiamas paleidimo parametrų. Čia esantys pakeitimai neįsigalios tol, kol yra nustelbimas.",
     "The Syncthing Authors": "Syncthing autoriai",
     "The Syncthing admin interface is configured to allow remote access without a password.": "Syncthing administratoriaus sąsaja yra sukonfigūruota taip, kad be slaptažodžio leistų nuotolinę prieigą.",
