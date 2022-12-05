@@ -391,6 +391,7 @@
     "TCP LAN": "TCP LAN",
     "TCP WAN": "TCP WAN",
     "Take me back": "මාව ආපසු ගන්න",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "GUI ලිපිනය ආරම්භක විකල්ප මගින් අභිබවා යයි. ප්‍රතික්‍ෂේප කිරීම ක්‍රියාත්මක වන විට මෙහි වෙනස්කම් බල නොපායි.",
     "The Syncthing Authors": "සමමුහුර්ත කතුවරුන්",
     "The Syncthing admin interface is configured to allow remote access without a password.": "මුරපදයක් නොමැතිව දුරස්ථ ප්‍රවේශය සඳහා සමමුහුර්ත කිරීමේ පරිපාලක අතුරුමුහුණත වින්‍යාස කර ඇත.",
