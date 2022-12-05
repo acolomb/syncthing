@@ -391,6 +391,7 @@
     "TCP LAN": "TCP LAN",
     "TCP WAN": "TCP WAN",
     "Take me back": "Jít zpět",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "Adresa v GUI je potlačena parametry při spuštění. Dokud potlačení trvá, zdejší změny nemají efekt.",
     "The Syncthing Authors": "Autoři Syncthing",
     "The Syncthing admin interface is configured to allow remote access without a password.": "V nastavení aplikace Syncthing je povoleno vzdálené připojení k administrátorskému rozhraní bez zadání hesla.",
