@@ -391,6 +391,7 @@
     "TCP LAN": "TCP 區域網路",
     "TCP WAN": "TCP 廣域網路",
     "Take me back": "帶我回去",
+    "Test Foo": "Test Foo",
     "The GUI address is overridden by startup options. Changes here will not take effect while the override is in place.": "GUI 位址已被自啟動選項覆寫。當覆寫啟用時，此處變更將不會生效。",
     "The Syncthing Authors": "Syncthing 作者們",
     "The Syncthing admin interface is configured to allow remote access without a password.": "Syncthing 管理介面被設定允許無密碼的遠端存取。",
