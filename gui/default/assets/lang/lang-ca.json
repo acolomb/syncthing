@@ -1,0 +1,13 @@
+{
+    "A device with that ID is already added.": "Ja s'ha afegit un dispositiu amb aquesta ID.",
+    "A negative number of days doesn't make sense.": "Un nombre negatiu de dies no té sentit.",
+    "A new major version may not be compatible with previous versions.": "Una nova versió major pot ser incompatible amb versions anteriors.",
+    "About": "Sobre",
+    "Action": "Acció",
+    "Actions": "Accions",
+    "Add": "Afegir",
+    "Add Device": "Afegir dispositiu",
+    "Add Folder": "Afegir carpeta",
+    "Add Remote Device": "Afegir dispositiu remot",
+    "Add new folder?": "Afegir nova carpeta?"
+}
