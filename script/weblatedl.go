@@ -73,7 +73,7 @@ func main() {
 
 		log.Printf("Updating language %q", code)
 
-		resp := req("https://hosted.weblate.org/api/translations/syncthing/gui/" + code + "/file/")
+		resp := req("https://hosted.weblate.org/api/translations/syncthing/gui/" + stat.Code + "/file/")
 		bs, err := io.ReadAll(resp.Body)
 		if err != nil {
 			log.Fatal(err)
