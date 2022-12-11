@@ -42,7 +42,7 @@ type stat struct {
 }
 
 type translation struct {
-	Content string
+	String string `json:"string"`
 }
 
 func main() {
@@ -81,19 +81,19 @@ func main() {
 		}
 
 		langs = append(langs, code)
-		names[code] = languageName(code)
+		names[code] = languageName(origCode)
 		if code == "en" {
 			continue
 		}
 
-		log.Printf("Updating language %q", code)
+		log.Printf("Updating language %q", origCode)
 
 		resp, err = downloadTranslationFile(origCode, "default")
 		if err != nil {
 			log.Fatal(err)
 		}
-		var t translation
-		err := json.NewDecoder(resp.Body).Decode(&t)
+		var t map[string]translation
+		err = json.NewDecoder(resp.Body).Decode(&t)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -103,7 +103,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		fd.WriteString(t.Content)
+		tFlat := make(map[string]string, len(t))
+		for key, trans := range t {
+			tFlat[key] = trans.String
+		}
+		json.NewEncoder(fd).Encode(tFlat)
 		fd.Close()
 	}
 
