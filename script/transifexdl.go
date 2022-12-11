@@ -33,8 +33,8 @@ type translation struct {
 func main() {
 	log.SetFlags(log.Lshortfile)
 
-	if u, p := userPass(); u == "" || p == "" {
-		log.Fatal("Need environment variables TRANSIFEX_USER and TRANSIFEX_PASS")
+	if t := userPass(); t == "" {
+		log.Fatal("Need environment variable TRANSIFEX_TOKEN")
 	}
 
 	curValidLangs := map[string]bool{}
@@ -113,20 +113,19 @@ func saveLanguageNames(names map[string]string) {
 	fd.Close()
 }
 
-func userPass() (string, string) {
-	user := os.Getenv("TRANSIFEX_USER")
-	pass := os.Getenv("TRANSIFEX_PASS")
-	return user, pass
+func userPass() string {
+	token := os.Getenv("TRANSIFEX_TOKEN")
+	return token
 }
 
 func req(url string) *http.Response {
-	user, pass := userPass()
+	token := userPass()
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	req.SetBasicAuth(user, pass)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Fatal(err)
