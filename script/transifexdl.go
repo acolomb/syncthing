@@ -17,7 +17,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"os"
 	"regexp"
 	"sort"
@@ -107,7 +106,11 @@ func main() {
 		for key, trans := range t {
 			tFlat[key] = trans.String
 		}
-		json.NewEncoder(fd).Encode(tFlat)
+		bs, err := json.MarshalIndent(tFlat, "", "    ")
+		if err != nil {
+			log.Fatal(err)
+		}
+		fd.Write(bs)
 		fd.Close()
 	}
 
@@ -232,14 +235,6 @@ func req(url string) *http.Response {
 		log.Fatal(err)
 	}
 
-	if resp.StatusCode != 200 {
-		respDump, err := httputil.DumpResponse(resp, true)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("RESPONSE:\n%s", string(respDump))
-	}
-
 	return resp
 }
 
@@ -287,9 +282,11 @@ func loadValidLangs() []string {
 
 type languageResponse struct {
 	Data struct {
-		Code string
-		Name string
-	}
+		Attr struct {
+			Code string `json:"code"`
+			Name string `json:"name"`
+		} `json:"attributes"`
+	} `json:"data"`
 }
 
 func languageName(code string) string {
@@ -300,8 +297,8 @@ func languageName(code string) string {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if lang.Data.Name == "" {
+	if lang.Data.Attr.Name == "" {
 		return code
 	}
-	return lang.Data.Name
+	return lang.Data.Attr.Name
 }
