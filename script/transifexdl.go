@@ -21,9 +21,20 @@ import (
 	"strings"
 )
 
+type statsResponse struct {
+	Data []resourceLanguageStats
+}
+
+type resourceLanguageStats struct {
+	ID   string `json:"id"`
+	Attr stat   `json:"attributes"`
+}
+
 type stat struct {
-	Translated   int `json:"translated_entities"`
-	Untranslated int `json:"untranslated_entities"`
+	Translated   int `json:"translated_strings"`
+	Untranslated int `json:"untranslated_strings"`
+	Reviewed     int `json:"reviewed_strings"`
+	Total        int `json:"total_strings"`
 }
 
 type translation struct {
@@ -43,9 +54,9 @@ func main() {
 	}
 	log.Println(curValidLangs)
 
-	resp := req("https://www.transifex.com/api/2/project/syncthing/resource/gui/stats")
+	resp := req("https://rest.api.transifex.com/resource_language_stats?filter[project]=o:syncthing:p:syncthing&filter[resource]=o:syncthing:p:syncthing:r:gui")
 
-	var stats map[string]stat
+	var stats statsResponse
 	err := json.NewDecoder(resp.Body).Decode(&stats)
 	if err != nil {
 		log.Fatal(err)
@@ -55,9 +66,10 @@ func main() {
 	names := make(map[string]string)
 
 	var langs []string
-	for code, stat := range stats {
-		code = strings.Replace(code, "_", "-", 1)
-		pct := 100 * stat.Translated / (stat.Translated + stat.Untranslated)
+	for _, stat := range stats.Data {
+		origCode := stat.ID[strings.LastIndex(stat.ID, ":")+1:]
+		code := strings.Replace(origCode, "_", "-", 1)
+		pct := 100 * stat.Attr.Translated / stat.Attr.Total
 		if pct < 75 || !curValidLangs[code] && pct < 95 {
 			log.Printf("Skipping language %q (too low completion ratio %d%%)", code, pct)
 			os.Remove("lang-" + code + ".json")
@@ -158,17 +170,22 @@ func loadValidLangs() []string {
 }
 
 type languageResponse struct {
-	Code string
-	Name string
+	Data struct {
+		Code string
+		Name string
+	}
 }
 
 func languageName(code string) string {
 	var lang languageResponse
-	resp := req("https://www.transifex.com/api/2/language/" + code)
+	resp := req("https://rest.api.transifex.com/languages/l:" + code)
 	defer resp.Body.Close()
-	json.NewDecoder(resp.Body).Decode(&lang)
-	if lang.Name == "" {
+	err := json.NewDecoder(resp.Body).Decode(&lang)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if lang.Data.Name == "" {
 		return code
 	}
-	return lang.Name
+	return lang.Data.Name
 }
