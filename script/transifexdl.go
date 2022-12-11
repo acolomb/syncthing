@@ -88,7 +88,7 @@ func main() {
 
 		log.Printf("Updating language %q", code)
 
-		resp, err = downloadTranslationFile(code, "default")
+		resp, err = downloadTranslationFile(origCode, "default")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -161,42 +161,33 @@ func downloadTranslationFile(code, mode string) (*http.Response, error) {
 	resp := reqPost("https://rest.api.transifex.com/resource_translations_async_downloads", requestBody)
 	location := resp.Header.Get("Content-Location")
 	var a asyncDownloadResponse
+checkAgain:
 	err := json.NewDecoder(resp.Body).Decode(&a)
 	if err != nil {
 		log.Fatal(err)
 	}
 	resp.Body.Close()
 
-	if a.Data.Attr.Status != "pending" && a.Data.Attr.Status != "processing" && a.Data.Attr.Status != "succeeded" {
-		return nil, errors.New("Error response")
-	}
-
-checkAgain:
-	resp = req(location)
-	log.Println(" code responded", resp.StatusCode)
-	if resp.StatusCode == 200 {
-		err := json.NewDecoder(resp.Body).Decode(&a)
-		if err != nil {
-			log.Fatal(err)
-		}
-		resp.Body.Close()
+	if resp.StatusCode == 202 {
+		log.Println(" code responded", resp.StatusCode)
 		log.Println("Status is", a.Data.Attr.Status, "location", location)
 		switch a.Data.Attr.Status {
-		case "pending":
-		case "processing":
 		case "succeeded":
+			resp = req(location)
+			return resp, nil
+
+		case "pending", "processing":
 			log.Println("Retrying in one second")
 			time.Sleep(1 * time.Second)
-			goto checkAgain
+			resp = req(location)
+			if resp.StatusCode != 200 {
+				goto checkAgain
+			}
 
 		default:
 			return nil, errors.New("Failed response")
 		}
-	} else if resp.StatusCode == 303 {
-		location = resp.Header.Get("Location")
-		resp = req(location)
 	}
-
 	return resp, nil
 }
 
