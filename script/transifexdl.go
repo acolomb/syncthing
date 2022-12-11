@@ -169,8 +169,6 @@ checkAgain:
 	resp.Body.Close()
 
 	if resp.StatusCode == 202 {
-		log.Println(" code responded", resp.StatusCode)
-		log.Println("Status is", a.Data.Attr.Status, "location", location)
 		switch a.Data.Attr.Status {
 		case "succeeded":
 			resp = req(location)
@@ -251,22 +249,10 @@ func reqPost(url string, content []byte) *http.Response {
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/vnd.api+json")
 
-	reqDump, err := httputil.DumpRequestOut(req, true)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("REQUEST:\n%s", string(reqDump))
-
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	respDump, err := httputil.DumpResponse(resp, true)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("RESPONSE:\n%s", string(respDump))
 
 	return resp
 }
