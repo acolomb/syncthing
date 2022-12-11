@@ -85,7 +85,7 @@ func main() {
 			continue
 		}
 
-		log.Printf("Updating language %q", origCode)
+		log.Printf("Updating language %q", code)
 
 		resp, err = downloadTranslationFile(origCode, "default")
 		if err != nil {
@@ -104,13 +104,15 @@ func main() {
 		}
 		tFlat := make(map[string]string, len(t))
 		for key, trans := range t {
+			key = strings.ReplaceAll(key, "\\", "")
 			tFlat[key] = trans.String
 		}
-		bs, err := json.MarshalIndent(tFlat, "", "    ")
-		if err != nil {
+		enc := json.NewEncoder(fd)
+		enc.SetIndent("", "    ")
+		enc.SetEscapeHTML(false)
+		if err = enc.Encode(tFlat); err != nil {
 			log.Fatal(err)
 		}
-		fd.Write(bs)
 		fd.Close()
 	}
 
