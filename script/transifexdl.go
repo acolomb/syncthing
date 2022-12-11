@@ -10,15 +10,19 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 type statsResponse struct {
@@ -84,7 +88,10 @@ func main() {
 
 		log.Printf("Updating language %q", code)
 
-		resp := req("https://www.transifex.com/api/2/project/syncthing/resource/gui/translation/" + code)
+		resp, err = downloadTranslationFile(code, "default")
+		if err != nil {
+			log.Fatal(err)
+		}
 		var t translation
 		err := json.NewDecoder(resp.Body).Decode(&t)
 		if err != nil {
@@ -102,6 +109,95 @@ func main() {
 
 	saveValidLangs(langs)
 	saveLanguageNames(names)
+}
+
+type asyncDownloadRequest struct {
+	Data struct {
+		Attr struct {
+			Mode     string `json:"mode"`
+			FileType string `json:"file_type"`
+		} `json:"attributes"`
+		Relationships struct {
+			Language struct {
+				Data struct {
+					ID   string `json:"id"`
+					Type string `json:"type"`
+				} `json:"data"`
+			} `json:"language"`
+			Resource struct {
+				Data struct {
+					ID   string `json:"id"`
+					Type string `json:"type"`
+				} `json:"data"`
+			} `json:"resource"`
+		} `json:"relationships"`
+		Type string `json:"type"`
+	} `json:"data"`
+}
+
+type asyncDownloadResponse struct {
+	Data struct {
+		Attr struct {
+			Status string `json:"status"`
+		} `json:"attributes"`
+		ID   string `json:"id"`
+		Type string `json:"type"`
+	} `json:"data"`
+	Errors []map[string]string `json:"errors"`
+}
+
+func downloadTranslationFile(code, mode string) (*http.Response, error) {
+	var r asyncDownloadRequest
+	r.Data.Attr.Mode = mode
+	r.Data.Attr.FileType = "json"
+	r.Data.Relationships.Language.Data.ID = "l:" + code
+	r.Data.Relationships.Language.Data.Type = "languages"
+	r.Data.Relationships.Resource.Data.ID = "o:syncthing:p:syncthing:r:gui"
+	r.Data.Relationships.Resource.Data.Type = "resources"
+	r.Data.Type = "resource_translations_async_downloads"
+
+	requestBody, _ := json.Marshal(r)
+
+	resp := reqPost("https://rest.api.transifex.com/resource_translations_async_downloads", requestBody)
+	location := resp.Header.Get("Content-Location")
+	var a asyncDownloadResponse
+	err := json.NewDecoder(resp.Body).Decode(&a)
+	if err != nil {
+		log.Fatal(err)
+	}
+	resp.Body.Close()
+
+	if a.Data.Attr.Status != "pending" && a.Data.Attr.Status != "processing" && a.Data.Attr.Status != "succeeded" {
+		return nil, errors.New("Error response")
+	}
+
+checkAgain:
+	resp = req(location)
+	log.Println(" code responded", resp.StatusCode)
+	if resp.StatusCode == 200 {
+		err := json.NewDecoder(resp.Body).Decode(&a)
+		if err != nil {
+			log.Fatal(err)
+		}
+		resp.Body.Close()
+		log.Println("Status is", a.Data.Attr.Status, "location", location)
+		switch a.Data.Attr.Status {
+		case "pending":
+		case "processing":
+		case "succeeded":
+			log.Println("Retrying in one second")
+			time.Sleep(1 * time.Second)
+			goto checkAgain
+
+		default:
+			return nil, errors.New("Failed response")
+		}
+	} else if resp.StatusCode == 303 {
+		location = resp.Header.Get("Location")
+		resp = req(location)
+	}
+
+	return resp, nil
 }
 
 func saveValidLangs(langs []string) {
@@ -142,6 +238,45 @@ func req(url string) *http.Response {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	if resp.StatusCode != 200 {
+		respDump, err := httputil.DumpResponse(resp, true)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("RESPONSE:\n%s", string(respDump))
+	}
+
+	return resp
+}
+
+func reqPost(url string, content []byte) *http.Response {
+	token := userPass()
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(content))
+	if err != nil {
+		log.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/vnd.api+json")
+
+	reqDump, err := httputil.DumpRequestOut(req, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("REQUEST:\n%s", string(reqDump))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	respDump, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("RESPONSE:\n%s", string(respDump))
+
 	return resp
 }
 
