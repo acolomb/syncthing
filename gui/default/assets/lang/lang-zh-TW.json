@@ -1,0 +1,10 @@
+{
+    "A device with that ID is already added.": "該裝置識別碼已被新增。",
+    "API Key": "API 金鑰",
+    "About": "關於",
+    "Actions": "操作",
+    "Add Device": "新增裝置",
+    "Add Folder": "添加資料夾",
+    "Add Remote Device": "新增遠端裝置",
+    "They are retried automatically and will be synced when the error is resolved.": "解決問題後，將會自動重試和同步。"
+}
