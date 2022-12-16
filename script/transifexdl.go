@@ -67,11 +67,23 @@ func main() {
 	resp.Body.Close()
 
 	names := make(map[string]string)
+	exportStats := make([]string, len(stats.Data))
 
 	var langs []string
 	for _, stat := range stats.Data {
 		origCode := stat.ID[strings.LastIndex(stat.ID, ":")+1:]
 		code := strings.Replace(origCode, "_", "-", 1)
+
+		names[code] = languageName(origCode)
+		exportStats = append(exportStats, fmt.Sprintf(
+			"%s;%s;%s;%d;%d;%d;%d\n",
+			code, origCode, names[code],
+			stat.Attr.Translated,
+			stat.Attr.Untranslated,
+			stat.Attr.Reviewed,
+			stat.Attr.Total,
+		))
+
 		pct := 100 * stat.Attr.Translated / stat.Attr.Total
 		if pct < 75 || !curValidLangs[code] && pct < 95 {
 			log.Printf("Skipping language %q (too low completion ratio %d%%)", code, pct)
@@ -80,7 +92,6 @@ func main() {
 		}
 
 		langs = append(langs, code)
-		names[code] = languageName(origCode)
 		if code == "en" {
 			continue
 		}
@@ -118,6 +129,7 @@ func main() {
 
 	saveValidLangs(langs)
 	saveLanguageNames(names)
+	saveExportStats(exportStats)
 }
 
 type asyncDownloadRequest struct {
@@ -216,6 +228,18 @@ func saveLanguageNames(names map[string]string) {
 	}
 	fmt.Fprint(fd, "var langPrettyprint = ")
 	json.NewEncoder(fd).Encode(names)
+	fd.Close()
+}
+
+func saveExportStats(lines []string) {
+	fd, err := os.Create("stats-tx.csv")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Fprint(fd, "code;origCode;name;translated;untranslated;reviewed;total\n")
+	for _, l := range lines {
+		fd.WriteString(l)
+	}
 	fd.Close()
 }
 
