@@ -22,11 +22,11 @@ import (
 )
 
 type stat struct {
-	Code         string `json:"code"`
-	Name         string `json:"name"`
-	Total        int    `json:"total"`
-	Translated   int    `json:"translated"`
-	Untranslated int    `json:"untranslated"`
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	Total      int    `json:"total"`
+	Translated int    `json:"translated"`
+	Fuzzy      int    `json:"fuzzy"`
 }
 
 type translation map[string]string
