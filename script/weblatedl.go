@@ -60,13 +60,11 @@ func main() {
 		code := reformatLanguageCode(stat.Code)
 		pct := 100 * stat.Translated / stat.Total
 		if pct < 75 || !curValidLangs[code] && pct < 95 {
-			log.Printf("Skipping language %q (too low completion ratio %d%%)", code, pct)
-			os.Remove("lang-" + code + ".json")
-			continue
+			log.Printf("Language %q too low completion ratio %d%%", code, pct)
+		} else {
+			langs = append(langs, code)
+			names[code] = stat.Name
 		}
-
-		langs = append(langs, code)
-		names[code] = stat.Name
 		if code == "en" {
 			continue
 		}
