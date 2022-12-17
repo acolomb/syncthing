@@ -57,7 +57,7 @@ func main() {
 
 	var langs []string
 	for _, stat := range stats {
-		code := strings.Replace(stat.Code, "_", "-", 1)
+		code := reformatLanguageCode(stat.Code)
 		pct := 100 * stat.Translated / stat.Total
 		if pct < 75 || !curValidLangs[code] && pct < 95 {
 			log.Printf("Skipping language %q (too low completion ratio %d%%)", code, pct)
@@ -95,6 +95,25 @@ func main() {
 
 	saveValidLangs(langs)
 	saveLanguageNames(names)
+}
+
+func reformatLanguageCode(origCode string) string {
+	switch origCode {
+	case "ko":
+		return "ko-KR"
+	case "nb_NO":
+		return "nb"
+	case "ro":
+		return "ro-RO"
+	case "zh_Hans":
+		return "zh-CN"
+	case "zh_Hant":
+		return "zh-TW"
+	case "zh_Hant_HK":
+		return "zh-HK"
+	default:
+		return strings.Replace(origCode, "_", "-", 1)
+	}
 }
 
 func saveValidLangs(langs []string) {
