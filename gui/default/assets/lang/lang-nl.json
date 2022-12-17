@@ -292,6 +292,8 @@
     "Received data is already encrypted": "Ontvangen gegevens zijn al versleuteld",
     "Recent Changes": "Recente wijzigingen",
     "Reduced by ignore patterns": "Verminderd door negeerpatronen",
+    "Relay LAN": "Relay LAN",
+    "Relay WAN": "Relay WAN",
     "Release Notes": "Release-opmerkingen",
     "Release candidates contain the latest features and fixes. They are similar to the traditional bi-weekly Syncthing releases.": "Release candidates bevatten de laatste functies en oplossingen voor problemen. Ze lijken op de traditionele tweewekelijkse Syncthing-releases.",
     "Remote Devices": "Externe apparaten",
