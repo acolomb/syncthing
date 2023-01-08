@@ -34,17 +34,18 @@ type translation map[string]string
 func main() {
 	log.SetFlags(log.Lshortfile)
 
-	if t := authToken(); t == "" {
+	token := os.Getenv("WEBLATE_TOKEN")
+	if token == "" {
 		log.Fatal("Need environment variable WEBLATE_TOKEN")
 	}
 
-	curValidLangs := map[string]bool{}
+	curValidLangs := make(map[string]struct{})
 	for _, lang := range loadValidLangs() {
-		curValidLangs[lang] = true
+		curValidLangs[lang] = struct{}{}
 	}
 	log.Println(curValidLangs)
 
-	resp := req("https://hosted.weblate.org/exports/stats/syncthing/gui/?format=json")
+	resp := req("https://hosted.weblate.org/exports/stats/syncthing/gui/?format=json", token)
 
 	var stats []stat
 	err := json.NewDecoder(resp.Body).Decode(&stats)
@@ -59,7 +60,7 @@ func main() {
 	for _, stat := range stats {
 		code := reformatLanguageCode(stat.Code)
 		pct := 100 * stat.Translated / stat.Total
-		if pct < 75 || !curValidLangs[code] && pct < 95 {
+		if _, valid := curValidLangs[code]; pct < 75 || !valid && pct < 95 {
 			log.Printf("Language %q too low completion ratio %d%%", code, pct)
 		} else {
 			langs = append(langs, code)
@@ -71,7 +72,7 @@ func main() {
 
 		log.Printf("Updating language %q", code)
 
-		resp := req("https://hosted.weblate.org/api/translations/syncthing/gui/" + stat.Code + "/file/")
+		resp := req("https://hosted.weblate.org/api/translations/syncthing/gui/"+stat.Code+"/file/", token)
 		bs, err := io.ReadAll(resp.Body)
 		if err != nil {
 			log.Fatal(err)
@@ -135,14 +136,7 @@ func saveLanguageNames(names map[string]string) {
 	fd.Close()
 }
 
-func authToken() string {
-	token := os.Getenv("WEBLATE_TOKEN")
-	return token
-}
-
-func req(url string) *http.Response {
-	token := authToken()
-
+func req(url, token string) *http.Response {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		log.Fatal(err)
