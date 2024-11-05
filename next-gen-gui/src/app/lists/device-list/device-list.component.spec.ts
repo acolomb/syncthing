@@ -5,7 +5,7 @@ import { MatSortModule } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 
 import { DeviceListComponent } from './device-list.component';
-import { HttpClientModule } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { ChangeDetectorRef } from '@angular/core';
 
 describe('DeviceListComponent', () => {
@@ -14,10 +14,10 @@ describe('DeviceListComponent', () => {
 
   beforeEach(async(() => {
     TestBed.configureTestingModule({
-      declarations: [DeviceListComponent],
-      imports: [HttpClientModule],
-      providers: [DeviceListComponent, ChangeDetectorRef]
-    }).compileComponents();
+    declarations: [DeviceListComponent],
+    imports: [],
+    providers: [DeviceListComponent, ChangeDetectorRef, provideHttpClient(withInterceptorsFromDi())]
+}).compileComponents();
 
     component = TestBed.inject(DeviceListComponent);
   }));

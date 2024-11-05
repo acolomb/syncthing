@@ -1,16 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 
 import { DbStatusService } from './db-status.service';
-import { HttpClientModule } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('DbStatusService', () => {
   let service: DbStatusService;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [HttpClientModule],
-      providers: [DbStatusService]
-    });
+    imports: [],
+    providers: [DbStatusService, provideHttpClient(withInterceptorsFromDi())]
+});
     TestBed.configureTestingModule({});
     service = TestBed.inject(DbStatusService);
   });

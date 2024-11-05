@@ -1,7 +1,7 @@
 import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { FolderListComponent } from './folder-list.component';
-import { HttpClientModule } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { ChangeDetectorRef } from '@angular/core';
 
 describe('FolderListComponent', () => {
@@ -10,10 +10,10 @@ describe('FolderListComponent', () => {
 
   beforeEach(async(() => {
     TestBed.configureTestingModule({
-      declarations: [FolderListComponent],
-      imports: [HttpClientModule],
-      providers: [FolderListComponent, ChangeDetectorRef]
-    })
+    declarations: [FolderListComponent],
+    imports: [],
+    providers: [FolderListComponent, ChangeDetectorRef, provideHttpClient(withInterceptorsFromDi())]
+})
       .compileComponents();
 
     component = TestBed.inject(FolderListComponent);

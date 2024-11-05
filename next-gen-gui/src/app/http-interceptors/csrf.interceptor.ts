@@ -1,8 +1,6 @@
 import { Injectable } from '@angular/core';
 import { deviceID } from '../api-utils';
-import {
-  HttpInterceptor, HttpHandler, HttpRequest, HttpHeaders
-} from '@angular/common/http';
+import { HttpInterceptor, HttpHandler, HttpRequest, HttpHeaders } from '@angular/common/http';
 
 import { CookieService } from '../services/cookie.service';
 

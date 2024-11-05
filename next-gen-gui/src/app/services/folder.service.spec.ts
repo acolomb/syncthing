@@ -1,16 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 
 import { FolderService } from './folder.service';
-import { HttpClientModule } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('FolderService', () => {
   let service: FolderService;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [HttpClientModule],
-      providers: [FolderService]
-    });
+    imports: [],
+    providers: [FolderService, provideHttpClient(withInterceptorsFromDi())]
+});
     service = TestBed.inject(FolderService);
   });
 

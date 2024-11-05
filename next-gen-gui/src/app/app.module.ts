@@ -1,6 +1,6 @@
 import { BrowserModule } from '@angular/platform-browser';
 import { NgModule } from '@angular/core';
-import { HttpClientModule, HttpClientXsrfModule } from '@angular/common/http';
+import { provideHttpClient, withInterceptorsFromDi, withXsrfConfiguration } from '@angular/common/http';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 
 import { MatTableModule } from '@angular/material/table';
@@ -37,50 +37,41 @@ import { DialogComponent } from './dialog/dialog.component';
 import { CardComponent, CardTitleComponent, CardContentComponent } from './card/card.component';
 import { TrimPipe } from './trim.pipe';
 
-@NgModule({
-  declarations: [
-    AppComponent,
-    StatusListComponent,
-    DeviceListComponent,
-    ListToggleComponent,
-    DashboardComponent,
-    DonutChartComponent,
-    ChartComponent,
-    ChartItemComponent,
-    FolderListComponent,
-    DialogComponent,
-    CardComponent,
-    CardTitleComponent,
-    CardContentComponent,
-    TrimPipe,
-  ],
-  imports: [
-    BrowserModule,
-    AppRoutingModule,
-    BrowserAnimationsModule,
-    MatInputModule,
-    MatTableModule,
-    MatPaginatorModule,
-    MatSortModule,
-    MatButtonToggleModule,
-    MatCardModule,
-    MatProgressBarModule,
-    MatDialogModule,
-    MatListModule,
-    MatButtonModule,
-    FlexLayoutModule,
-    HttpClientModule,
-    HttpClientXsrfModule.withOptions({
-      headerName: 'X-CSRF-Token-' + deviceID(),
-      cookieName: 'CSRF-Token-' + deviceID(),
-    }),
-    environment.production ?
-      [] : HttpClientInMemoryWebApiModule.forRoot(InMemoryConfigDataService,
-        { dataEncapsulation: false, delay: 10 }),
-  ],
-  providers: [httpInterceptorProviders],
-  bootstrap: [AppComponent]
-})
+@NgModule({ declarations: [
+        AppComponent,
+        StatusListComponent,
+        DeviceListComponent,
+        ListToggleComponent,
+        DashboardComponent,
+        DonutChartComponent,
+        ChartComponent,
+        ChartItemComponent,
+        FolderListComponent,
+        DialogComponent,
+        CardComponent,
+        CardTitleComponent,
+        CardContentComponent,
+        TrimPipe,
+    ],
+    bootstrap: [AppComponent], imports: [BrowserModule,
+        AppRoutingModule,
+        BrowserAnimationsModule,
+        MatInputModule,
+        MatTableModule,
+        MatPaginatorModule,
+        MatSortModule,
+        MatButtonToggleModule,
+        MatCardModule,
+        MatProgressBarModule,
+        MatDialogModule,
+        MatListModule,
+        MatButtonModule,
+        FlexLayoutModule,
+        environment.production ?
+            [] : HttpClientInMemoryWebApiModule.forRoot(InMemoryConfigDataService, { dataEncapsulation: false, delay: 10 })], providers: [httpInterceptorProviders, provideHttpClient(withInterceptorsFromDi(), withXsrfConfiguration({
+            headerName: 'X-CSRF-Token-' + deviceID(),
+            cookieName: 'CSRF-Token-' + deviceID(),
+        }))] })
 
 export class AppModule { }
 
