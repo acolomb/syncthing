@@ -1,34 +1,34 @@
 // Custom Theming for Angular Material
+@use '~@angular/material' as mat;
 // For more information: https://material.angular.io/guide/theming
-@import '~@angular/material/theming';
 @import './app/card/card.component.scss';
 @import './app/charts/chart-item/chart-item.component.scss';
 @import './app/lists/status-list/status-list.component.scss';
 
 
 // Custom typography
-$tech-ui-typography: mat-typography-config(
+$tech-ui-typography: mat.define-typography-config(
     $font-family: '"Lucida Console", Monaco, monospace',
-    $display-4:     mat-typography-level(112px, 112px, 300),
-    $display-3:     mat-typography-level(56px, 56px, 400),
-    $display-2:     mat-typography-level(45px, 48px, 400),
-    $display-1:     mat-typography-level(34px, 40px, 400),
-    $headline:      mat-typography-level(24px, 32px, 400),
-    $title:         mat-typography-level(20px, 32px, 500),
-    $subheading-2:  mat-typography-level(16px, 28px, 400),
-    $subheading-1:  mat-typography-level(15px, 24px, 400),
-    $body-2:        mat-typography-level(14px, 24px, 500),
-    $body-1:        mat-typography-level(14px, 20px, 400),
-    $caption:       mat-typography-level(12px, 20px, 400),
-    $button:        mat-typography-level(14px, 14px, 500),
+    $display-4:     mat.define-typography-level(112px, 112px, 300),
+    $display-3:     mat.define-typography-level(56px, 56px, 400),
+    $display-2:     mat.define-typography-level(45px, 48px, 400),
+    $display-1:     mat.define-typography-level(34px, 40px, 400),
+    $headline:      mat.define-typography-level(24px, 32px, 400),
+    $title:         mat.define-typography-level(20px, 32px, 500),
+    $subheading-2:  mat.define-typography-level(16px, 28px, 400),
+    $subheading-1:  mat.define-typography-level(15px, 24px, 400),
+    $body-2:        mat.define-typography-level(14px, 24px, 500),
+    $body-1:        mat.define-typography-level(14px, 20px, 400),
+    $caption:       mat.define-typography-level(12px, 20px, 400),
+    $button:        mat.define-typography-level(14px, 14px, 500),
       // Line-height must be unit-less fraction of the font-size.
-    $input:         mat-typography-level(16px, 1.25, 400)
+    $input:         mat.define-typography-level(16px, 1.25, 400)
 );
 
 // Include the common styles for Angular Material. We include this here so that you only
 // have to load a single css file for Angular Material in your app.
 // Be sure that you only ever include this mixin once!
-@include mat-core($tech-ui-typography);
+@include mat.core($tech-ui-typography);
 
 // Define the palettes for your theme using the Material Design palettes available in palette.scss
 // (imported above). For each palette, you can optionally specify a default, lighter, and darker
@@ -49,46 +49,46 @@ $tech-ui-blue: (
   A400: #0891D1,
   A700: #0891D1,
   contrast: (
-    50: $dark-primary-text,
-    100: $dark-primary-text,
-    200: $dark-primary-text,
-    300: $dark-primary-text,
-    400: $dark-primary-text,
-    500: $light-primary-text,
-    600: $light-primary-text,
-    700: $light-primary-text,
-    800: $light-primary-text,
-    900: $light-primary-text,
-    A100: $dark-primary-text,
-    A200: $light-primary-text,
-    A400: $light-primary-text,
-    A700: $light-primary-text,
+    50: rgba(black, 0.87),
+    100: rgba(black, 0.87),
+    200: rgba(black, 0.87),
+    300: rgba(black, 0.87),
+    400: rgba(black, 0.87),
+    500: white,
+    600: white,
+    700: white,
+    800: white,
+    900: white,
+    A100: rgba(black, 0.87),
+    A200: white,
+    A400: white,
+    A700: white,
   )
 );
 
-$tech-ui-primary: mat-palette($tech-ui-blue);
-$tech-ui-accent: mat-palette($tech-ui-blue, A200, A100, A400);
+$tech-ui-primary: mat.define-palette($tech-ui-blue);
+$tech-ui-accent: mat.define-palette($tech-ui-blue, A200, A100, A400);
 
 // The warn palette is optional (defaults to red).
-$tech-ui-warn: mat-palette($mat-red);
+$tech-ui-warn: mat.define-palette(mat.$red-palette);
 
 // Create the theme object (a Sass map containing all of the palettes).
-$tech-ui-theme: mat-light-theme($tech-ui-primary, $tech-ui-accent, $tech-ui-warn);
-$tech-ui-dark-theme: mat-dark-theme($tech-ui-primary, $tech-ui-accent, $tech-ui-warn);
+$tech-ui-theme: mat.define-light-theme($tech-ui-primary, $tech-ui-accent, $tech-ui-warn);
+$tech-ui-dark-theme: mat.define-dark-theme($tech-ui-primary, $tech-ui-accent, $tech-ui-warn);
     
 // Include theme styles for core and each component used in your app.
 // Alternatively, you can import and @include the theme mixins for each component
 // that you are using.
-@include angular-material-theme($tech-ui-theme);
+@include mat.all-component-themes($tech-ui-theme);
 @include tui-card-theme($tech-ui-theme);
 @include chart-item-theme($tech-ui-theme);
    
 html, body { 
     height: 100%; 
     background-color: #eeeeee;
-    font-size: mat-font-size($tech-ui-typography, body-1);
-    font-family: mat-font-family($tech-ui-typography);
-    line-height: mat-line-height($tech-ui-typography, body-1);
+    font-size: mat.font-size($tech-ui-typography, body-1);
+    font-family: mat.font-family($tech-ui-typography);
+    line-height: mat.line-height($tech-ui-typography, body-1);
     color: #303030;
 }
 
@@ -98,7 +98,7 @@ a {
 }
 
 @media (prefers-color-scheme: dark) {
-    @include angular-material-theme($tech-ui-dark-theme);
+    @include mat.all-component-themes($tech-ui-dark-theme);
     @include tui-card-theme($tech-ui-dark-theme);
     @include chart-item-theme($tech-ui-dark-theme);
     

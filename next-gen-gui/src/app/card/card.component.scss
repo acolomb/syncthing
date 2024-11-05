@@ -1,5 +1,5 @@
 // Import theming functions
-@import '~@angular/material/theming';
+@use '~@angular/material' as mat;
 
 @mixin tui-card-theme($theme) {
     // Extract the palettes you need from the theme definition.
@@ -16,9 +16,9 @@
 
     .tui-card-title {
         padding: 16px 16px 0 16px;
-        font-size: mat-font-size($tech-ui-typography, subheading-2);
+        font-size: mat.font-size($tech-ui-typography, subheading-2);
         font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif;
-        color: mat-color($primary);
+        color: mat.get-color-from-palette($primary);
     }
 
     .tui-card-content {
@@ -31,7 +31,7 @@
 
     @media (prefers-color-scheme: dark) {
         .tui-card {
-            background-color: map_get($mat-grey, 800);
+            background-color: map_get(mat.$grey-palette, 800);
         }
     }
 }

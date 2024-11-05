@@ -1,3 +1,4 @@
+@use '~@angular/material' as mat;
 @mixin chart-item-theme($theme) {
     .item {
         cursor: pointer;
@@ -16,7 +17,7 @@
 
     @media (prefers-color-scheme: dark) {
         .selected {
-            background-color: map_get($mat-grey, 900);
+            background-color: map_get(mat.$grey-palette, 900);
             color: white;
         }
 
