@@ -1,13 +1,13 @@
 import { AfterViewInit, Component, OnInit, ViewChild, ChangeDetectorRef, OnDestroy } from '@angular/core';
-import { MatPaginator } from '@angular/material/paginator';
+import { MatLegacyPaginator as MatPaginator } from '@angular/material/legacy-paginator';
 import { MatSort } from '@angular/material/sort';
-import { MatTable, MatTableDataSource } from '@angular/material/table';
+import { MatLegacyTable as MatTable, MatLegacyTableDataSource as MatTableDataSource } from '@angular/material/legacy-table';
 
 import Folder from '../../folder';
 import { SystemConfigService } from '../../services/system-config.service';
 import { FilterService } from 'src/app/services/filter.service';
 import { StType } from 'src/app/type';
-import { MatInput } from '@angular/material/input';
+import { MatLegacyInput as MatInput } from '@angular/material/legacy-input';
 import { FolderService } from 'src/app/services/folder.service';
 import { trigger, state, style, transition, animate } from '@angular/animations';
 
